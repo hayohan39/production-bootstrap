@@ -100,6 +100,7 @@ export function runScan({ base, head, out, configPath = path.join('.github', 'ri
 // ci
 
 const VERCEL_URL = /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.vercel\.app\/?$/;
+const INSPECT_URL = /^https:\/\/vercel\.com\/[A-Za-z0-9._~\/-]+$/;
 
 export async function collectCi({ runId, metaPath }) {
   const res = await gh(`/repos/${repo()}/actions/runs/${runId}/jobs?per_page=100`).catch(() => null);
@@ -114,6 +115,9 @@ export async function collectCi({ runId, metaPath }) {
     preview: conclusion('preview'),
     autofix: conclusion('Claude auto-fix'),
     previewUrl: null,
+    inspectUrl: null,
+    previewAt: null,
+    deploy: null,
     migrate: null,
     smoke: null,
     runUrl: `${process.env.GITHUB_SERVER_URL ?? 'https://github.com'}/${repo()}/actions/runs/${runId}`,
@@ -123,9 +127,11 @@ export async function collectCi({ runId, metaPath }) {
     try {
       const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
       if (typeof meta.preview_url === 'string' && VERCEL_URL.test(meta.preview_url)) ci.previewUrl = meta.preview_url;
-      for (const key of ['migrate', 'smoke']) {
+      if (typeof meta.inspect_url === 'string' && INSPECT_URL.test(meta.inspect_url)) ci.inspectUrl = meta.inspect_url;
+      for (const key of ['deploy', 'migrate', 'smoke']) {
         if (['success', 'failure', 'skipped', 'cancelled'].includes(meta[key])) ci[key] = meta[key];
       }
+      if (typeof meta.finished_at === 'string' && !Number.isNaN(Date.parse(meta.finished_at))) ci.previewAt = meta.finished_at;
     } catch {
       // 메타데이터가 깨졌으면 무시한다.
     }
