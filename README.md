@@ -55,7 +55,7 @@ PR 이 "좋은 코드인가" 가 아니라 **"프로덕션에서 잘못되면 �
 
 또는 GitHub → Actions → New project → Run workflow (`name`, `description`). 워크플로가 하는 일:
 
-1. 이 템플릿으로 리포지토리 생성, 공통 시크릿 복사
+1. 이 템플릿으로 리포지토리 생성(merge 된 PR 브랜치 자동 삭제 켬), 공통 시크릿 복사
 2. Neon 프로젝트 + Vercel 프로젝트 생성·연결, 배포 보호 우회 시크릿(스모크 테스트용)
 3. 이름/설명 채우고 템플릿 전용 파일 제거 후 push → 첫 프로덕션 배포
 4. Risk 라벨, main 브랜치 규칙(PR 필수, `test` · `risk-gate` 필수 체크)
