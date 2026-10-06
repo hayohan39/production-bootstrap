@@ -1,0 +1,258 @@
+name: PR review
+
+# CI 가 끝나면(성공·실패 모두) 그 PR 을 평가해 PR 종합 코멘트 하나로 모은다.
+#
+#   scan    main 의 규칙으로 diff 를 스캔(결정적, 비용 없음) + CI 결과 수집
+#   review  Claude 가 .github/risk/rubric.md 로 코드 리뷰 + factor 점수 (structured output)
+#           CI 가 통과했을 때만. 실패하면 auto-fix 가 고친 뒤 다시 온다.
+#   report  최종 Risk Score → PR 종합 코멘트 · risk:* 라벨 · risk-gate 커밋 상태
+#
+# workflow_run 은 항상 기본 브랜치(main)의 이 파일과 코드로 실행된다. PR 의 코드는 git 데이터로
+# 읽기만 하고 실행하지 않는다 → PR 이 자기 평가 규칙을 바꿔 통과할 수 없다.
+#
+# 끄기: 변수 CLAUDE_REVIEW=false (규칙 스캔·게이트는 계속 돈다)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+concurrency:
+  group: pr-review-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    if: >-
+      github.event.workflow_run.event == 'pull_request'
+      && github.event.workflow_run.conclusion != 'cancelled'
+      && github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      pr: ${{ steps.pr.outputs.number }}
+      sha: ${{ steps.pr.outputs.sha }}
+      review: ${{ steps.decide.outputs.review }}
+      model: ${{ steps.decide.outputs.model }}
+      max_turns: ${{ steps.decide.outputs.max_turns }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
+      BRANCH: ${{ github.event.workflow_run.head_branch }}
+    steps:
+      - name: Find the pull request
+        id: pr
+        env:
+          NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          number="$NUMBER"
+          if [ -z "$number" ]; then
+            number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+          fi
+          if [ -z "$number" ]; then
+            echo "열린 PR 이 없습니다. 건너뜁니다."
+            exit 0
+          fi
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number")
+          head=$(jq -r .head.sha <<<"$pr")
+          if [ "$head" != "$SHA" ] || [ "$(jq -r .state <<<"$pr")" != "open" ]; then
+            echo "PR #$number 의 head 가 ${head:0:7} 로 바뀌었거나 닫혔습니다. 이 실행(${SHA:0:7})은 건너뜁니다."
+            exit 0
+          fi
+          {
+            echo "number=$number"
+            echo "sha=$SHA"
+            echo "base_ref=$(jq -r .base.ref <<<"$pr")"
+            echo "draft=$(jq -r .draft <<<"$pr")"
+          } >> "$GITHUB_OUTPUT"
+          mkdir -p .review-in
+          jq -r '.body // ""' <<<"$pr" > .review-in/pr-body.md
+
+      # main(신뢰하는 코드) 체크아웃. PR 의 커밋은 git 객체로만 가져온다.
+      - uses: actions/checkout@v5
+        if: steps.pr.outputs.number != ''
+        with:
+          fetch-depth: 0
+          path: main
+
+      - uses: actions/setup-node@v5
+        if: steps.pr.outputs.number != ''
+        with:
+          node-version-file: main/.nvmrc
+
+      - name: Scan the diff
+        id: scan
+        if: steps.pr.outputs.number != ''
+        working-directory: main
+        env:
+          NUMBER: ${{ steps.pr.outputs.number }}
+          BASE_REF: ${{ steps.pr.outputs.base_ref }}
+        run: |
+          git fetch --no-tags origin "+refs/pull/$NUMBER/head:refs/remotes/pr/head" "$BASE_REF"
+          git cat-file -e "$SHA^{commit}"
+          node scripts/risk/cli.mjs scan --base "origin/$BASE_REF" --head "$SHA" --out ../.review
+          cp ../.review-in/pr-body.md ../.review/pr-body.md
+
+      - uses: actions/download-artifact@v4
+        if: steps.pr.outputs.number != ''
+        continue-on-error: true
+        with:
+          name: ci-meta
+          path: ci-meta
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Collect CI results
+        id: ci
+        if: steps.pr.outputs.number != ''
+        working-directory: main
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: node scripts/risk/cli.mjs ci --run-id "$RUN_ID" --meta ../ci-meta/ci-meta.json --out ../.review/ci.json
+
+      - name: Decide review
+        id: decide
+        if: steps.pr.outputs.number != ''
+        env:
+          ENABLED: ${{ vars.CLAUDE_REVIEW != 'false' }}
+          HAS_CLAUDE: ${{ secrets.ANTHROPIC_API_KEY != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          CI_OK: ${{ steps.ci.outputs.ci_ok }}
+          DRAFT: ${{ steps.pr.outputs.draft }}
+          ACTOR: ${{ github.event.workflow_run.triggering_actor.login }}
+          HIGH_RISK: ${{ steps.scan.outputs.high_risk }}
+          MODEL: ${{ vars.CLAUDE_REVIEW_MODEL || 'claude-sonnet-5-5' }}
+          MODEL_HIGH: ${{ vars.CLAUDE_REVIEW_MODEL_HIGH || 'claude-opus-5-5' }}
+        run: |
+          review=true
+          why=""
+          [ "$ENABLED" = "true" ] || { review=false; why="CLAUDE_REVIEW=false"; }
+          [ "$HAS_CLAUDE" = "true" ] || { review=false; why="Claude 시크릿 없음"; }
+          [ "$CI_OK" = "true" ] || { review=false; why="CI 실패 — 통과 후 리뷰"; }
+          [ "$DRAFT" != "true" ] || { review=false; why="draft PR"; }
+          [ "$ACTOR" != "dependabot[bot]" ] || { review=false; why="Dependabot 이 시작한 실행 (시크릿 없음)"; }
+          # 규칙 스캔이 HIGH 이상이면 더 강한 모델로, 더 오래 본다.
+          if [ "$HIGH_RISK" = "true" ]; then model="$MODEL_HIGH"; turns=60; else model="$MODEL"; turns=30; fi
+          echo "review=$review" >> "$GITHUB_OUTPUT"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+          echo "max_turns=$turns" >> "$GITHUB_OUTPUT"
+          echo "AI 리뷰: $review ${why:+($why)} · 모델 $model"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.pr.outputs.number != ''
+        with:
+          name: review-input
+          path: .review/
+          include-hidden-files: true
+          retention-days: 7
+
+  review:
+    needs: [scan]
+    if: needs.scan.outputs.review == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Claude 에게는 읽기 권한만 준다. 코멘트·라벨·상태는 report job 이 쓴다.
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      result: ${{ steps.claude.outputs.structured_output }}
+    env:
+      SHA: ${{ needs.scan.outputs.sha }}
+      NUMBER: ${{ needs.scan.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # PR head 는 ./pr 에 별도 작업 트리로. Claude Code 의 설정·훅(.claude/)은 main 의 것만 쓰인다.
+      - name: Check out the PR as data
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          git fetch --no-tags "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}" "+refs/pull/$NUMBER/head:refs/remotes/pr/head"
+          git worktree add --detach pr "$SHA"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: review-input
+          path: .review
+
+      - name: Build prompt
+        id: prompt
+        run: |
+          base=$(jq -r .base .review/facts.json)
+          {
+            echo 'text<<__PROMPT_END__'
+            cat .github/risk/review-prompt.md
+            echo ""
+            echo "## 이번 PR"
+            echo ""
+            echo "- PR #$NUMBER, base \`${base:0:12}\` → head \`${SHA:0:12}\`"
+            echo "- 전체 diff: \`.review/pr.diff\` · 같은 내용을 \`git diff $base $SHA\` 로도 볼 수 있다."
+            echo '__PROMPT_END__'
+            echo "schema=$(jq -c . .github/risk/review-schema.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Claude review
+        id: claude
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ github.token }}
+          prompt: ${{ steps.prompt.outputs.text }}
+          claude_args: |
+            --model ${{ needs.scan.outputs.model }}
+            --max-turns ${{ needs.scan.outputs.max_turns }}
+            --allowed-tools "Read,Glob,Grep,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git -C pr diff:*),Bash(git -C pr log:*),Bash(git -C pr show:*)"
+            --json-schema '${{ steps.prompt.outputs.schema }}'
+
+  report:
+    needs: [scan, review]
+    if: always() && needs.scan.result == 'success' && needs.scan.outputs.pr != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: review-input
+          path: .review
+
+      - name: Publish summary, label and gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.review.outputs.result }}
+          REVIEW_STATUS: ${{ needs.review.result }}
+          PR: ${{ needs.scan.outputs.pr }}
+          SHA: ${{ needs.scan.outputs.sha }}
+          MODEL: ${{ needs.scan.outputs.model }}
+        run: |
+          printf '%s' "$RESULT" > .review/review.json
+          if [ "$REVIEW_STATUS" = "success" ] && [ ! -s .review/review.json ]; then
+            echo "::warning::Claude 리뷰가 결과를 내지 못했습니다. 규칙 기반 점수만 씁니다."
+          fi
+          node scripts/risk/cli.mjs report --dir .review --pr "$PR" --sha "$SHA" --review .review/review.json --model "$MODEL"

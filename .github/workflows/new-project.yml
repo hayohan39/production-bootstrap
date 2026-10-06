@@ -1,0 +1,207 @@
+name: New project
+
+# [템플릿 전용] 이 템플릿에서 새 프로젝트를 만든다.
+#
+#   1. 템플릿으로 GitHub 리포지토리 생성
+#   2. 공통 시크릿 복사 (Claude / Vercel / Neon 토큰)
+#   3. Neon 프로젝트 + Vercel 프로젝트 생성, 서로 연결 (scripts/provision.mjs)
+#   4. 플레이스홀더 치환 + 템플릿 전용 파일 제거 후 push → 첫 프로덕션 배포
+#   5. main 보호 규칙(PR 필수, 필수 체크 test·risk-gate) + Risk 라벨
+#
+# Claude 클라우드 세션은 GitHub 프록시 때문에 리포지토리를 직접 만들 수 없다.
+# 대신 이 리포지토리에 attach 된 세션에서 이 워크플로를 dispatch 하면 된다:
+#
+#   node scripts/gh.mjs dispatch new-project.yml name=my-app description="..."
+#   (gh workflow run 은 GraphQL 을 써서 클라우드 세션에서는 403)
+#
+# 같은 이름으로 다시 실행해도 안전하다. 이미 있는 것은 재사용하고 빠진 것만 채운다.
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: "프로젝트 이름 (소문자/숫자/하이픈, 리포지토리·Vercel·Neon 이름으로 쓰임)"
+        required: true
+        type: string
+      description:
+        description: "한 줄 설명"
+        type: string
+        default: ""
+      visibility:
+        description: "리포지토리 공개 범위"
+        type: choice
+        options: [private, public]
+        default: private
+
+concurrency:
+  group: new-project-${{ inputs.name }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  create:
+    if: github.event.repository.is_template
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.BOOTSTRAP_PAT }}
+      NAME: ${{ inputs.name }}
+      DESCRIPTION: ${{ inputs.description }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Validate inputs and token
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::BOOTSTRAP_PAT 시크릿이 없습니다. docs/bootstrap/SETUP.md 를 보세요."
+            exit 1
+          fi
+          if ! [[ "$NAME" =~ ^[a-z0-9][a-z0-9-]{0,98}[a-z0-9]$ ]]; then
+            echo "::error::이름은 소문자/숫자/하이픈만, 하이픈으로 시작·끝나지 않게: '$NAME'"
+            exit 1
+          fi
+          owner=$(gh api user --jq .login)
+          echo "OWNER=$owner" >> "$GITHUB_ENV"
+          echo "TARGET=$owner/$NAME" >> "$GITHUB_ENV"
+
+      - name: Create repository from this template
+        env:
+          VISIBILITY: ${{ inputs.visibility }}
+        run: |
+          if gh api "repos/$TARGET" >/dev/null 2>&1; then
+            echo "이미 있는 리포지토리입니다. 재사용합니다: $TARGET"
+          else
+            private=true; [ "$VISIBILITY" = "public" ] && private=false
+            gh api -X POST "repos/$GITHUB_REPOSITORY/generate" \
+              -f owner="$OWNER" -f name="$NAME" -f description="$DESCRIPTION" \
+              -F private="$private" -F include_all_branches=false >/dev/null
+            echo "생성 요청: $TARGET"
+          fi
+          # 템플릿 복사는 비동기다. main 이 생길 때까지 기다린다.
+          for _ in $(seq 1 30); do
+            gh api "repos/$TARGET/branches/main" >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::60초 안에 $TARGET 의 main 브랜치가 생기지 않았습니다."
+          exit 1
+
+      # 새 리포지토리는 자기 시크릿이 있어야 워크플로가 돈다.
+      - name: Copy shared secrets
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          BOT_PAT: ${{ secrets.BOT_PAT }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          CLAUDE_REVIEW_MODEL: ${{ vars.CLAUDE_REVIEW_MODEL }}
+          CLAUDE_REVIEW_MODEL_HIGH: ${{ vars.CLAUDE_REVIEW_MODEL_HIGH }}
+        run: |
+          copied=(); skipped=()
+          for key in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY BOT_PAT VERCEL_TOKEN NEON_API_KEY; do
+            if [ -n "${!key}" ]; then
+              printf '%s' "${!key}" | gh secret set "$key" -R "$TARGET"
+              copied+=("$key")
+            else
+              skipped+=("$key")
+            fi
+          done
+          echo "COPIED=${copied[*]:-없음}" >> "$GITHUB_ENV"
+          echo "SKIPPED=${skipped[*]:-없음}" >> "$GITHUB_ENV"
+          # 공통 변수도 넘긴다(있을 때만).
+          for key in CLAUDE_MODEL CLAUDE_REVIEW_MODEL CLAUDE_REVIEW_MODEL_HIGH; do
+            if [ -n "${!key}" ]; then
+              gh variable set "$key" -R "$TARGET" --body "${!key}"
+            fi
+          done
+
+      # 리포지토리는 이미 만들어졌다. 프로비저닝이 실패해도 초기화는 계속하고,
+      # 요약에서 알린다. deploy.yml / preview 는 값이 없으면 실패 대신 건너뛴다.
+      - name: Provision Neon and Vercel
+        id: provision
+        continue-on-error: true
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_ORG_ID: ${{ secrets.NEON_ORG_ID }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+          REGION: ${{ vars.NEON_REGION || 'aws-ap-southeast-1' }}
+        run: node scripts/provision.mjs --repo "$TARGET" --region "$REGION"
+
+      # 마지막에 push 한다. 이 push 가 새 리포지토리의 deploy.yml 을 깨워
+      # (위에서 채운 값으로) 첫 프로덕션 배포가 일어난다.
+      - name: Initialize the project and push
+        env:
+          ACTOR: ${{ github.actor }}
+          ACTOR_ID: ${{ github.actor_id }}
+        run: |
+          git config --global user.name "$ACTOR"
+          git config --global user.email "${ACTOR_ID}+${ACTOR}@users.noreply.github.com"
+          work="$RUNNER_TEMP/$NAME"
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/$TARGET.git" "$work"
+          cd "$work"
+          if [ ! -f scripts/init-project.mjs ]; then
+            echo "이미 초기화된 리포지토리입니다."
+            echo "INIT=skipped" >> "$GITHUB_ENV"
+            # 이미 초기화된 상태에서 재실행했다면 배포를 다시 깨운다(새 값 반영).
+            gh workflow run deploy.yml -R "$TARGET" || true
+            exit 0
+          fi
+          node scripts/init-project.mjs --name "$NAME" --description "$DESCRIPTION"
+          git add -A
+          git commit -m "chore: production-bootstrap 에서 $NAME 초기화"
+          git push origin main
+          echo "INIT=done" >> "$GITHUB_ENV"
+
+      # 초기화 push 뒤에 건다(먼저 걸면 초기화 커밋을 main 에 직접 push 할 수 없다).
+      # 비공개 리포는 GitHub Pro/Team 이상이어야 한다. 실패해도 프로젝트는 쓸 수 있고 요약에서 알린다.
+      - name: Protect main
+        id: protect
+        continue-on-error: true
+        run: node scripts/provision.mjs --repo "$TARGET" --protect
+
+      - name: Summary
+        if: always()
+        env:
+          PROVISION: ${{ steps.provision.outcome }}
+          PROTECT: ${{ steps.protect.outcome }}
+        run: |
+          {
+            echo "## \`$TARGET\`"
+            echo ""
+            echo "https://github.com/$TARGET"
+            echo ""
+            echo "| 항목 | 결과 |"
+            echo "| --- | --- |"
+            echo "| 복사된 시크릿 | ${COPIED:-없음} |"
+            echo "| 빠진 시크릿 | ${SKIPPED:-없음} |"
+            echo "| Neon + Vercel 프로비저닝 | ${PROVISION:-미실행} |"
+            echo "| 초기화 커밋 | ${INIT:-미실행} |"
+            echo "| main 보호 (test · risk-gate 필수) | ${PROTECT:-미실행} |"
+            echo ""
+            if [ "$PROTECT" != "success" ]; then
+              echo "⚠️ main 보호 규칙을 걸지 못했습니다. 비공개 리포는 GitHub Pro/Team 이 필요합니다."
+              echo "요금제를 올린 뒤 이 워크플로를 같은 이름으로 다시 실행하거나 SETUP.md 의 수동 설정을 따르세요."
+              echo ""
+            fi
+            if [ "$PROVISION" != "success" ]; then
+              echo "⚠️ 프로비저닝이 끝나지 않았습니다. \`Provision\` 스텝 로그를 확인하고,"
+              echo "원인을 고친 뒤 **같은 이름으로 이 워크플로를 다시 실행**하세요."
+              echo ""
+            fi
+            echo "### 다음 단계"
+            echo ""
+            echo "1. claude.ai/code 에서 새 세션을 열고 리포지토리 \`$TARGET\` 를 선택"
+            echo "   (목록에 없으면 Claude GitHub App 의 리포지토리 접근을 확인)"
+            echo "2. 만들고 싶은 것을 설명 → Claude 가 PR 을 올립니다"
+            echo "3. PR 종합 코멘트(CI · 리뷰 · Risk Score)를 보고 merge → 스테이징 확인 후 자동 승격"
+            echo "4. Sentry DSN 등 남은 설정: 새 리포지토리의 docs/runbook.md '처음 한 번'"
+          } >> "$GITHUB_STEP_SUMMARY"

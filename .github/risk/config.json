@@ -1,0 +1,38 @@
+{
+  "$comment": "scripts/risk/scan.mjs 가 쓰는 경로 분류. 프로젝트 구조가 바뀌면 여기를 고친다. 이 파일을 바꾸는 PR 은 리스크 평가 자체를 바꾸므로 최소 VERY HIGH 로 평가된다.",
+  "paths": {
+    "docs": ["**/*.md", "docs/**", "LICENSE", ".editorconfig", ".gitattributes"],
+    "tooling": [".claude/**", ".vscode/**"],
+    "test": ["test/**", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "vitest.config.ts"],
+    "migration": ["migrations/**/*.sql"],
+    "riskSystem": [".github/risk/**", "scripts/risk/**", ".github/workflows/pr-review.yml", ".github/workflows/risk-gate.yml"],
+    "infra": [
+      ".github/workflows/**",
+      ".github/dependabot.yml",
+      "vercel.json",
+      ".vercelignore",
+      "next.config.ts",
+      "scripts/migrate.mjs",
+      "scripts/neon.mjs",
+      "scripts/session-start.sh"
+    ],
+    "sharedCore": [
+      "src/lib/db.ts",
+      "src/lib/env.ts",
+      "src/lib/log.ts",
+      "src/lib/sentry.ts",
+      "src/instrumentation.ts",
+      "src/instrumentation-client.ts",
+      "src/sentry.*.ts",
+      "src/proxy.ts",
+      "src/middleware.ts",
+      "src/app/layout.tsx",
+      "src/app/global-error.tsx"
+    ],
+    "auth": ["src/**/auth/**", "src/**/*auth*", "src/**/*session*", "src/**/*permission*", "src/proxy.ts", "src/middleware.ts"],
+    "api": ["src/app/**/route.ts", "src/app/**/route.tsx"],
+    "page": ["src/app/**/page.tsx", "src/app/**/page.ts"],
+    "deps": ["package.json", "package-lock.json"]
+  },
+  "ignoreEnv": ["NODE_ENV", "NEXT_RUNTIME", "CI", "APP_COMMIT_SHA", "VERCEL_ENV", "VERCEL_URL", "NEXT_PUBLIC_VERCEL_ENV"]
+}

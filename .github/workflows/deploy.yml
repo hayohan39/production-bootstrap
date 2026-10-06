@@ -1,0 +1,266 @@
+name: Deploy
+
+# main 에 merge 되면 프로덕션에 배포한다.
+#
+#   migrate  (대기 중인 마이그레이션이 있으면) Neon 스냅샷 브랜치 pre-deploy/<sha> → 프로덕션 DB 마이그레이션
+#   deploy   프로덕션 빌드를 도메인 연결 없이 배포(--skip-domain) → 그 URL 로 스모크 테스트
+#            → promote(트래픽 전환) → 프로덕션 도메인 헬스체크(새 커밋인지까지)
+#            → 실패하면 직전 배포로 자동 롤백 → merge 된 PR 에 결과 코멘트
+#
+# DB 는 자동으로 되돌리지 않는다. 그래서 스키마 변경은 expand → contract 로 나눈다(.github/risk/rubric.md).
+# 복구 절차는 docs/runbook.md.
+#
+# Vercel 의 Git 자동배포는 쓰지 않는다(프로젝트를 Git 에 연결하지 않음). 배포가 반드시 마이그레이션 뒤에
+# 일어나도록 순서를 이 워크플로가 쥐고 있기 위해서다.
+#
+# 필요한 값이 아직 없으면(프로비저닝 전) 실패시키지 않고 무엇이 없는지 알린 뒤 건너뛴다.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  migrate:
+    name: Database migrate
+    # 템플릿 리포지토리 자신은 배포하지 않는다.
+    if: ${{ !github.event.repository.is_template }}
+    runs-on: ubuntu-latest
+    environment: production
+    outputs:
+      snapshot: ${{ steps.snapshot.outputs.snapshot_name }}
+      applied: ${{ steps.pending.outputs.pending }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check database configuration
+        id: guard
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ⏭️ 마이그레이션 건너뜀"
+              echo ""
+              echo "\`DATABASE_URL\` 시크릿이 없습니다. 프로비저닝이 끝나지 않은 프로젝트입니다."
+              echo "production-bootstrap 의 new-project 워크플로를 같은 이름으로 다시 실행하면 채워집니다."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! ls migrations/*.sql >/dev/null 2>&1; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "마이그레이션 파일이 없습니다. 건너뜁니다."
+            exit 0
+          fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v5
+        if: steps.guard.outputs.ready == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        if: steps.guard.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Pending migrations
+        id: pending
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          out=$(npm run --silent migrate:status)
+          echo "$out"
+          if grep -q '대기 중' <<<"$out"; then echo "pending=true" >> "$GITHUB_OUTPUT"; else echo "pending=false" >> "$GITHUB_OUTPUT"; fi
+
+      # 되돌릴 수 없는 일이 생겨도 마이그레이션 직전 상태로 돌아갈 수 있게 copy-on-write 스냅샷을 남긴다.
+      # 실패하면 마이그레이션도 하지 않는다(변수 PREDEPLOY_SNAPSHOTS=0 으로 끌 수 있다).
+      - name: Snapshot production database
+        id: snapshot
+        if: steps.pending.outputs.pending == 'true' && vars.PREDEPLOY_SNAPSHOTS != '0'
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          KEEP: ${{ vars.PREDEPLOY_SNAPSHOTS || '3' }}
+        run: |
+          if [ -z "$NEON_API_KEY" ] || [ -z "$NEON_PROJECT_ID" ]; then
+            echo "::warning::Neon 설정이 없어 스냅샷을 건너뜁니다(PITR 로만 복구 가능)."
+            exit 0
+          fi
+          node scripts/neon.mjs snapshot-create --sha "$GITHUB_SHA" --keep "$KEEP"
+
+      - name: Apply migrations
+        if: steps.pending.outputs.pending == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          echo "마이그레이션 시작: $(date -u +%Y-%m-%dT%H:%M:%SZ) (PITR 복구 기준 시각)" | tee -a "$GITHUB_STEP_SUMMARY"
+          npm run migrate
+
+  deploy:
+    name: Vercel production deploy
+    needs: [migrate]
+    # 마이그레이션이 실패하면 배포하지 않는다. (건너뛴 것은 괜찮다.)
+    if: >-
+      always()
+      && !github.event.repository.is_template
+      && needs.migrate.result != 'failure'
+      && needs.migrate.result != 'cancelled'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    permissions:
+      contents: read
+      deployments: read
+      pull-requests: write
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check Vercel configuration
+        id: guard
+        run: |
+          missing=()
+          for key in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            [ -n "${!key}" ] || missing+=("$key")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            {
+              echo "### ⏭️ Vercel 배포 건너뜀"
+              echo ""
+              echo "없는 값: \`${missing[*]}\`"
+              echo "production-bootstrap 의 new-project 워크플로를 같은 이름으로 다시 실행하면 채워집니다."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.guard.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v5
+        if: steps.guard.outputs.ready == 'true'
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install Vercel CLI
+        if: steps.guard.outputs.ready == 'true'
+        run: npm install --global vercel@latest >/dev/null
+
+      # 자동 롤백 대상: 지금 프로덕션에서 돌고 있는(마지막으로 성공한) 배포.
+      - name: Remember current production
+        id: current
+        if: steps.guard.outputs.ready == 'true'
+        run: |
+          url=$(node scripts/release.mjs last-good || true)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "현재 프로덕션: ${url:-없음(첫 배포)}"
+
+      # 프로덕션 환경변수로 빌드하지만 도메인은 아직 옮기지 않는다(스테이징 단계).
+      - name: Deploy (staged)
+        id: deploy
+        if: steps.guard.outputs.ready == 'true'
+        run: |
+          # --yes: 배포 이력이 없는 새 프로젝트의 첫 배포에서 CLI 가 대화형 확인을 물으려다 실패하는 것을 막는다.
+          url=$(vercel deploy --prod --skip-domain --yes --token="$VERCEL_TOKEN" \
+            --env APP_COMMIT_SHA="$GITHUB_SHA" --build-env SENTRY_RELEASE="$GITHUB_SHA" \
+            --meta githubCommitSha="$GITHUB_SHA")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "스테이징 배포: $url"
+
+      - name: Smoke test (staged)
+        id: smoke
+        if: steps.deploy.outcome == 'success'
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          if [ -z "$BYPASS" ]; then
+            echo "::warning::VERCEL_AUTOMATION_BYPASS_SECRET 이 없어 스테이징 스모크 테스트를 건너뜁니다. 승격 후 헬스체크만 합니다."
+            echo "result=skipped" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          node scripts/smoke.mjs "$URL" --sha "$GITHUB_SHA"
+          echo "result=success" >> "$GITHUB_OUTPUT"
+
+      - name: Promote to production
+        id: promote
+        if: steps.smoke.outcome == 'success'
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: vercel promote "$URL" --yes --timeout 5m --token="$VERCEL_TOKEN"
+
+      # 프로덕션 도메인이 새 커밋을 내보내는지까지 확인한다.
+      - name: Health check (production)
+        id: health
+        if: steps.promote.outcome == 'success'
+        run: |
+          domain=$(node scripts/release.mjs production-domain || true)
+          if [ -z "$domain" ]; then
+            echo "::warning::프로덕션 도메인을 찾지 못해 헬스체크를 건너뜁니다."
+            exit 0
+          fi
+          echo "domain=https://$domain" >> "$GITHUB_OUTPUT"
+          node scripts/smoke.mjs "https://$domain" --sha "$GITHUB_SHA" --tries 9
+
+      - name: Roll back to previous deployment
+        id: rollback
+        if: failure() && steps.promote.outcome == 'success' && steps.current.outputs.url != ''
+        env:
+          PREVIOUS: ${{ steps.current.outputs.url }}
+        run: |
+          echo "::error::헬스체크 실패 → $PREVIOUS 로 롤백합니다."
+          vercel rollback "$PREVIOUS" --timeout 5m --token="$VERCEL_TOKEN"
+
+      - name: Summary and PR comment
+        if: always() && steps.guard.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.deploy.outputs.url }}
+          DOMAIN: ${{ steps.health.outputs.domain }}
+          SMOKE: ${{ steps.smoke.outcome }}
+          PROMOTE: ${{ steps.promote.outcome }}
+          HEALTH: ${{ steps.health.outcome }}
+          ROLLBACK: ${{ steps.rollback.outcome }}
+          PREVIOUS: ${{ steps.current.outputs.url }}
+          SNAPSHOT: ${{ needs.migrate.outputs.snapshot }}
+          APPLIED: ${{ needs.migrate.outputs.applied }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          db=""
+          if [ "$APPLIED" = "true" ]; then
+            db=" · DB 마이그레이션 적용됨${SNAPSHOT:+ (스냅샷 \`$SNAPSHOT\`)}"
+          fi
+          if [ "$HEALTH" = "success" ]; then
+            msg="🚀 프로덕션 배포 완료: ${DOMAIN:-$URL} (헬스체크 OK)$db"
+          elif [ "$ROLLBACK" = "success" ]; then
+            msg="↩️ 헬스체크 실패로 **자동 롤백**했습니다 → $PREVIOUS$db. DB 는 그대로입니다 — docs/runbook.md 의 '배포 실패' 를 보세요. [로그]($RUN_URL)"
+          elif [ "$PROMOTE" = "success" ]; then
+            msg="🔥 배포 후 헬스체크 실패, 자동 롤백도 못 했습니다(이전 배포 기록 없음 또는 롤백 실패)$db. **docs/runbook.md 를 따라 바로 확인하세요.** [로그]($RUN_URL)"
+          elif [ "$SMOKE" = "failure" ]; then
+            msg="⛔ 스테이징 스모크 테스트 실패 — 트래픽은 옮기지 않았습니다(프로덕션은 이전 버전)$db. [로그]($RUN_URL)"
+          else
+            msg="❌ 프로덕션 배포 실패 — 트래픽은 옮기지 않았습니다$db. [로그]($RUN_URL)"
+          fi
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].number // empty' || true)
+          if [ -n "$pr" ]; then
+            risk=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/labels" --jq '[.[].name | select(startswith("risk:"))][0] // empty' || true)
+            gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$msg${risk:+ · 이 PR 의 Risk: \`$risk\`}"
+          fi

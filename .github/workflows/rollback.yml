@@ -1,0 +1,94 @@
+name: Rollback
+
+# 앱(Vercel)을 이전 배포로 되돌린다. 휴대폰에서도 Actions → Rollback → Run workflow 로 실행할 수 있다.
+# DB 는 되돌리지 않는다 — DB 복구가 필요하면 docs/runbook.md 의 "데이터 복구" 를 따른다.
+#
+#   to 를 비우면: production 환경에서 성공했던 배포 중 지금 것 바로 이전 것으로 되돌린다.
+#   to 를 주면:   그 배포 URL(또는 ID)로 되돌린다.
+on:
+  workflow_dispatch:
+    inputs:
+      to:
+        description: "되돌릴 배포 URL/ID (비우면 직전 성공 배포)"
+        type: string
+        default: ""
+      reason:
+        description: "이유 (기록용)"
+        type: string
+        default: ""
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    if: ${{ !github.event.repository.is_template }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+      GITHUB_TOKEN: ${{ github.token }}
+      TO: ${{ inputs.to }}
+      REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Choose target
+        id: target
+        run: |
+          target="$TO"
+          if [ -z "$target" ]; then
+            target=$(node scripts/release.mjs last-good --skip 1)
+          fi
+          if [ -z "$target" ]; then
+            echo "::error::되돌릴 이전 배포를 찾지 못했습니다. 'to' 에 Vercel 배포 URL 을 넣어 다시 실행하세요."
+            exit 1
+          fi
+          echo "url=$target" >> "$GITHUB_OUTPUT"
+
+      - name: Roll back
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
+        run: |
+          npm install --global vercel@latest >/dev/null
+          vercel rollback "$TARGET" --timeout 5m --token="$VERCEL_TOKEN"
+
+      - name: Health check
+        run: |
+          domain=$(node scripts/release.mjs production-domain || true)
+          if [ -z "$domain" ]; then
+            echo "::warning::프로덕션 도메인을 찾지 못해 헬스체크를 건너뜁니다."
+            exit 0
+          fi
+          node scripts/smoke.mjs "https://$domain" --tries 6
+
+      - name: Summary
+        if: always()
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          {
+            echo "### ↩️ 롤백 → ${TARGET:-(대상 없음)}"
+            echo ""
+            echo "- 실행: @$ACTOR"
+            echo "- 이유: ${REASON:-(없음)}"
+            echo "- DB 는 그대로입니다. 이전 코드가 현재 스키마와 맞는지 확인하세요 (docs/runbook.md)."
+            echo "- 다음 배포(merge)가 오면 다시 최신 코드로 바뀝니다. 원인을 고치는 PR 을 먼저 올리세요."
+          } >> "$GITHUB_STEP_SUMMARY"
