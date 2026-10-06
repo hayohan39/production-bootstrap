@@ -1,0 +1,62 @@
+name: Claude Mention
+
+# PR/이슈 코멘트에 @claude 를 붙이면 Claude 가 그 지시대로 작업한다.
+# PR 리뷰 중 "merge 대신 수정 요청" 을 할 때 쓴다. (쓰기 권한이 있는 사람만 부를 수 있다.)
+#
+# 도구는 허용 목록으로 제한한다: 라벨·PR 상태·리뷰를 바꾸는 gh 명령은 쓸 수 없다
+# (특히 risk-accepted 는 사람만 붙일 수 있어야 한다).
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned, labeled]
+
+concurrency:
+  group: claude-mention-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  claude:
+    if: >-
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || github.event.label.name == 'claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.BOT_PAT || github.token }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.BOT_PAT || '' }}
+          trigger_phrase: "@claude"
+          additional_permissions: |
+            actions: read
+          claude_args: |
+            --model ${{ vars.CLAUDE_MODEL || 'claude-sonnet-5' }}
+            --max-turns 60
+            --allowed-tools "Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(git:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh run view:*),Read,Edit,Write,Glob,Grep,mcp__github_ci__get_ci_status,mcp__github_ci__get_workflow_run_details,mcp__github_ci__download_job_log"
+            --disallowed-tools "Bash(git push --force:*),Bash(git push -f:*)"

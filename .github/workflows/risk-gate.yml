@@ -1,0 +1,50 @@
+name: Risk gate
+
+# PR 의 라벨·본문이 바뀌면 저장된 Risk 평가로 merge 게이트(risk-gate 상태)만 다시 계산한다.
+# (점수 자체는 CI 가 끝난 뒤 pr-review.yml 이 낸다. 여기서는 LLM 을 부르지 않는다.)
+#
+#   synchronize/opened  새 커밋 → risk-gate 를 "대기" 로 (평가가 끝날 때까지 merge 불가)
+#   labeled risk-accepted  관리자(사람)가 붙였는지 확인 → 아니면 즉시 뗀다
+#   edited              PR 본문의 "롤백 계획" / "배포 후 확인" 이 채워졌는지 다시 본다
+#
+# pull_request_target 은 base(main) 의 이 파일과 코드로 실행된다. PR 의 코드는 체크아웃하지 않는다.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, labeled, unlabeled, edited]
+
+concurrency:
+  group: risk-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      statuses: write
+    steps:
+      # base 브랜치(main) 체크아웃. 절대 PR 의 head 를 체크아웃하지 않는다.
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Re-evaluate gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          ACTION: ${{ github.event.action }}
+          LABEL: ${{ github.event.label.name }}
+          ACTOR: ${{ github.event.sender.login }}
+          ACTOR_TYPE: ${{ github.event.sender.type }}
+        run: node scripts/risk/cli.mjs gate --pr "$PR" --sha "$SHA" --action "$ACTION" --label "$LABEL" --actor "$ACTOR" --actor-type "$ACTOR_TYPE"

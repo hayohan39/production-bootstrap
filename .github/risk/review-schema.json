@@ -1,0 +1,329 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "summary",
+    "verdict",
+    "findings",
+    "risk"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "3줄 이내. 이 PR 이 무엇을 바꾸는지, merge 하면 사용자에게 무엇이 달라지는지"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "changes_requested"
+      ],
+      "description": "blocker 나 major finding 이 있으면 changes_requested"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "category",
+          "location",
+          "issue"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "blocker",
+              "major",
+              "minor"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "correctness",
+              "migration",
+              "security",
+              "compatibility",
+              "testing",
+              "complexity"
+            ]
+          },
+          "location": {
+            "type": "string",
+            "description": "파일:라인"
+          },
+          "issue": {
+            "type": "string",
+            "description": "어떤 입력·상태에서 어떻게 깨지는지"
+          },
+          "suggestion": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factors",
+        "overrides",
+        "drivers",
+        "affected",
+        "mitigations",
+        "unknowns"
+      ],
+      "properties": {
+        "factors": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "security",
+            "scope",
+            "compatibility",
+            "testing",
+            "migration"
+          ],
+          "properties": {
+            "security": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "score",
+                "evidence",
+                "confidence"
+              ],
+              "properties": {
+                "score": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    5,
+                    10,
+                    15,
+                    20
+                  ],
+                  "description": "Security Risk 0-20"
+                },
+                "evidence": {
+                  "type": "string",
+                  "description": "근거. 가능하면 파일:라인 과 함께 한두 문장"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "verified",
+                    "inferred",
+                    "unknown"
+                  ],
+                  "description": "verified=코드로 확인, inferred=정황상 추정, unknown=확인할 수 없음"
+                }
+              }
+            },
+            "scope": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "score",
+                "evidence",
+                "confidence"
+              ],
+              "properties": {
+                "score": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    5,
+                    10,
+                    15,
+                    20
+                  ],
+                  "description": "Change Scope / Blast Radius 0-20"
+                },
+                "evidence": {
+                  "type": "string",
+                  "description": "근거. 가능하면 파일:라인 과 함께 한두 문장"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "verified",
+                    "inferred",
+                    "unknown"
+                  ],
+                  "description": "verified=코드로 확인, inferred=정황상 추정, unknown=확인할 수 없음"
+                }
+              }
+            },
+            "compatibility": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "score",
+                "evidence",
+                "confidence"
+              ],
+              "properties": {
+                "score": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    5,
+                    10,
+                    15,
+                    20
+                  ],
+                  "description": "Compatibility / Breaking Change 0-20"
+                },
+                "evidence": {
+                  "type": "string",
+                  "description": "근거. 가능하면 파일:라인 과 함께 한두 문장"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "verified",
+                    "inferred",
+                    "unknown"
+                  ],
+                  "description": "verified=코드로 확인, inferred=정황상 추정, unknown=확인할 수 없음"
+                }
+              }
+            },
+            "testing": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "score",
+                "evidence",
+                "confidence"
+              ],
+              "properties": {
+                "score": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    5,
+                    10,
+                    15,
+                    20
+                  ],
+                  "description": "Testing / Verification 0-20"
+                },
+                "evidence": {
+                  "type": "string",
+                  "description": "근거. 가능하면 파일:라인 과 함께 한두 문장"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "verified",
+                    "inferred",
+                    "unknown"
+                  ],
+                  "description": "verified=코드로 확인, inferred=정황상 추정, unknown=확인할 수 없음"
+                }
+              }
+            },
+            "migration": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "score",
+                "evidence",
+                "confidence"
+              ],
+              "properties": {
+                "score": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    5,
+                    10,
+                    15,
+                    20
+                  ],
+                  "description": "Migration / Rollback 0-20"
+                },
+                "evidence": {
+                  "type": "string",
+                  "description": "근거. 가능하면 파일:라인 과 함께 한두 문장"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "verified",
+                    "inferred",
+                    "unknown"
+                  ],
+                  "description": "verified=코드로 확인, inferred=정황상 추정, unknown=확인할 수 없음"
+                }
+              }
+            }
+          }
+        },
+        "overrides": {
+          "type": "array",
+          "description": "rubric 의 Hard Override 조건 중 코드로 확인한 것. 규칙 스캔이 이미 낸 것은 다시 쓰지 않아도 된다",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "level",
+              "condition",
+              "evidence"
+            ],
+            "properties": {
+              "level": {
+                "type": "string",
+                "enum": [
+                  "HIGH",
+                  "VERY_HIGH",
+                  "CRITICAL"
+                ]
+              },
+              "condition": {
+                "type": "string"
+              },
+              "evidence": {
+                "type": "string",
+                "description": "파일:라인 과 이유"
+              }
+            }
+          }
+        },
+        "drivers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "왜 위험한가, 무엇이 깨질 수 있는가 (최대 5개)"
+        },
+        "affected": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "영향 받는 컴포넌트·사용자 흐름"
+        },
+        "mitigations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "위험을 줄이는 구체적 방법 (최대 5개)"
+        },
+        "unknowns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "확인하지 못해 사람이 확인해야 하는 것"
+        }
+      }
+    }
+  }
+}
