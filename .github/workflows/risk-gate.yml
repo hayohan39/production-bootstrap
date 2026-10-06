@@ -30,11 +30,11 @@ jobs:
       statuses: write
     steps:
       # base 브랜치(main) 체크아웃. 절대 PR 의 head 를 체크아웃하지 않는다.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
 

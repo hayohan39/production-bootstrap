@@ -17,12 +17,12 @@ jobs:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           # PR 브랜치가 이미 지워졌을 수 있으니 base 의 스크립트를 쓴다.
           ref: ${{ github.event.pull_request.base.ref }}
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
 

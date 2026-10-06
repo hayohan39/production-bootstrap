@@ -79,13 +79,13 @@ jobs:
           jq -r '.body // ""' <<<"$pr" > .review-in/pr-body.md
 
       # main(신뢰하는 코드) 체크아웃. PR 의 커밋은 git 객체로만 가져온다.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         if: steps.pr.outputs.number != ''
         with:
           fetch-depth: 0
           path: main
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         if: steps.pr.outputs.number != ''
         with:
           node-version-file: main/.nvmrc
@@ -103,7 +103,7 @@ jobs:
           node scripts/risk/cli.mjs scan --base "origin/$BASE_REF" --head "$SHA" --out ../.review
           cp ../.review-in/pr-body.md ../.review/pr-body.md
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: steps.pr.outputs.number != ''
         continue-on-error: true
         with:
@@ -147,7 +147,7 @@ jobs:
           echo "max_turns=$turns" >> "$GITHUB_OUTPUT"
           echo "AI 리뷰: $review ${why:+($why)} · 모델 $model"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: steps.pr.outputs.number != ''
         with:
           name: review-input
@@ -170,7 +170,7 @@ jobs:
       SHA: ${{ needs.scan.outputs.sha }}
       NUMBER: ${{ needs.scan.outputs.pr }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -183,7 +183,7 @@ jobs:
           git fetch --no-tags "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}" "+refs/pull/$NUMBER/head:refs/remotes/pr/head"
           git worktree add --detach pr "$SHA"
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: review-input
           path: .review
@@ -229,15 +229,15 @@ jobs:
       issues: write
       statuses: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: review-input
           path: .review
