@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { canAccept, runScan } from "../scripts/risk/cli.mjs";
 import { bandLevel, toAnchor } from "../scripts/risk/levels.mjs";
-import { decodeData, renderSummary } from "../scripts/risk/render.mjs";
+import { decodeData, previewCell, renderSummary } from "../scripts/risk/render.mjs";
 import { categorize, classifyStatement, globToRegExp, parseUnifiedDiff, scanChanges } from "../scripts/risk/scan.mjs";
 import { applyPolicy, finalize, sectionFilled } from "../scripts/risk/score.mjs";
 
@@ -221,6 +221,12 @@ describe("scanChanges", () => {
       head: { "package.json": JSON.stringify({ dependencies: { next: "^16.1.0", zod: "^4.0.0" } }) },
     });
     expect(ids(result)).toEqual(expect.arrayContaining(["deps.added", "deps.major"]));
+    const patch = scan([{ path: "package.json", added: ["x"] }], {
+      base: { "package.json": JSON.stringify({ dependencies: { pg: "^8.23.0" } }) },
+      head: { "package.json": JSON.stringify({ dependencies: { pg: "^8.23.1" } }) },
+    });
+    expect(ids(patch)).toContain("deps.updated");
+    expect(patch.floors.security).toBe(5);
     expect(result.floors).toMatchObject({ security: 5, compatibility: 10 });
   });
 
@@ -332,6 +338,23 @@ describe("applyPolicy", () => {
 
   it("CI 실패면 막는다", () => {
     expect(applyPolicy(assessment("LOW"), { prBody: "", acceptance: null, ciOk: false }).state).toBe("failure");
+  });
+});
+
+describe("previewCell", () => {
+  it("Vercel 봇처럼 상태·링크·시각을 한 칸에", () => {
+    expect(
+      previewCell({
+        preview: "success",
+        deploy: "success",
+        previewUrl: "https://a.vercel.app",
+        inspectUrl: "https://vercel.com/me/a/dpl",
+        migrate: "success",
+        smoke: "success",
+        previewAt: "2026-10-06T03:06:00Z",
+      }),
+    ).toBe("✅ Ready · [Preview](https://a.vercel.app) · [Inspect](https://vercel.com/me/a/dpl) · 마이그레이션 ✅ · 스모크 ✅ · 10/6 12:06 KST");
+    expect(previewCell({ preview: "skipped" })).toBe("⏭️");
   });
 });
 

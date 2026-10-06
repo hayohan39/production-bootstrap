@@ -106,6 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
     env:
       NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
       NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
@@ -143,6 +144,14 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
 
+      # Vercel 봇처럼 시작하자마자 "배포 중" 을 보여 준다. 끝나면 같은 코멘트를 결과로 바꾼다.
+      - name: Comment on the PR (pending)
+        if: steps.guard.outputs.ready == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/preview-comment.mjs pending
+
       - name: Install
         if: steps.guard.outputs.ready == 'true'
         run: npm ci
@@ -167,10 +176,18 @@ jobs:
         run: |
           npm install --global vercel@latest >/dev/null
           # 원격 빌드(Vercel 빌드 머신). DATABASE_URL 은 이 배포에만 주입한다.
+          # 빌드가 실패해도 Inspect 링크(빌드 로그)는 남기기 위해 CLI 출력을 따로 받는다.
+          set +e
           url=$(vercel deploy --yes --token="$VERCEL_TOKEN" \
             --env DATABASE_URL="$DB_POOLED" --env APP_COMMIT_SHA="$SHA" \
-            --meta githubPr="$PR" --meta githubCommitSha="$SHA")
+            --meta githubPr="$PR" --meta githubCommitSha="$SHA" 2>vercel.log)
+          status=$?
+          set -e
+          cat vercel.log >&2
+          inspect=$(grep -i 'inspect' vercel.log | grep -oE 'https://vercel\.com/[^ ]+' | head -n1 || true)
+          echo "inspect=$inspect" >> "$GITHUB_OUTPUT"
           echo "url=$url" >> "$GITHUB_OUTPUT"
+          [ "$status" -eq 0 ] || exit "$status"
           echo "### 🔎 프리뷰: $url" >> "$GITHUB_STEP_SUMMARY"
 
       # 프리뷰가 실제로 뜨고 프로덕션 복제 DB 에 붙는지. 배포 보호를 우회하는 자동화용 시크릿이
@@ -190,16 +207,32 @@ jobs:
           node scripts/smoke.mjs "$URL" --sha "$SHA"
           echo "result=success" >> "$GITHUB_OUTPUT"
 
+      - name: Comment on the PR
+        if: always() && steps.guard.outputs.ready == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          URL: ${{ steps.deploy.outputs.url }}
+          INSPECT: ${{ steps.deploy.outputs.inspect }}
+          BRANCH: ${{ steps.branch.outputs.branch_name }}
+          BRANCH_STEP: ${{ steps.branch.outcome }}
+          MIGRATE: ${{ steps.migrate.outcome }}
+          DEPLOY: ${{ steps.deploy.outcome }}
+          SMOKE: ${{ steps.smoke.outputs.result || steps.smoke.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: node scripts/preview-comment.mjs result
+
       # pr-review.yml 이 PR 종합 코멘트에 쓸 값. 비밀값은 넣지 않는다.
       - name: Record preview result
         if: always() && steps.guard.outputs.ready == 'true'
         env:
           URL: ${{ steps.deploy.outputs.url }}
+          INSPECT: ${{ steps.deploy.outputs.inspect }}
           MIGRATE: ${{ steps.migrate.outcome }}
+          DEPLOY: ${{ steps.deploy.outcome }}
           SMOKE: ${{ steps.smoke.outputs.result || steps.smoke.outcome }}
         run: |
           mkdir -p ci-meta
-          node -e 'const e=process.env;require("fs").writeFileSync("ci-meta/ci-meta.json",JSON.stringify({preview_url:e.URL||null,migrate:e.MIGRATE||null,smoke:e.SMOKE||null}))'
+          node -e 'const e=process.env;require("fs").writeFileSync("ci-meta/ci-meta.json",JSON.stringify({preview_url:e.URL||null,inspect_url:e.INSPECT||null,deploy:e.DEPLOY||null,migrate:e.MIGRATE||null,smoke:e.SMOKE||null,finished_at:new Date().toISOString()}))'
 
       - uses: actions/upload-artifact@v4
         if: always() && steps.guard.outputs.ready == 'true'
@@ -210,6 +243,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # CI 실패 → Claude 가 로그를 읽고 고쳐서 PR 브랜치에 push.
+  # Dependabot PR 은 제외한다(시크릿이 없어 돌지 못하고, 의존성 호환 문제는 사람이 판단할 일이다).
   #
   # 이 push 가 CI 를 다시 돌리려면 GITHUB_TOKEN 이 아닌 토큰으로 push 해야 한다.
   # Claude GitHub App 이 설치되어 있으면 action 이 App 토큰을 쓰므로 재실행된다.
@@ -224,6 +258,7 @@ jobs:
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.draft == false
       && !contains(github.event.pull_request.labels.*.name, 'no-autofix')
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write

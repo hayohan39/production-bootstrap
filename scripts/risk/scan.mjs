@@ -482,6 +482,9 @@ export function scanChanges({ files, changedPaths, readBase, readHead, baseRefer
           add(isProd ? 'deps.added' : 'deps.dev', { security: 5 }, null, `${isProd ? '' : '개발 '}의존성 추가 ${name}@${range}`, ['package.json']);
         } else if (major(b[name]) !== null && major(range) !== null && major(range) > major(b[name])) {
           add('deps.major', { compatibility: isProd ? 10 : 5 }, null, `메이저 업그레이드 ${name} ${b[name]} → ${range}`, ['package.json']);
+        } else if (b[name] !== range) {
+          // 마이너·패치도 새 코드가 들어온다(공급망). 낮은 floor 로 기록만 한다.
+          add('deps.updated', { security: 5 }, null, `버전 변경 ${name} ${b[name]} → ${range}`, ['package.json']);
         }
       }
       for (const name of Object.keys(b)) {

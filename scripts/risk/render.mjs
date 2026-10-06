@@ -1,5 +1,6 @@
 // PR 종합 코멘트(CI · 리뷰 · Risk Score · merge 게이트)를 만든다. 사용자는 휴대폰으로 읽는다:
 // 첫 두 줄에서 결론이 보이고, 상세는 아래로 내려간다.
+import { kst } from '../preview-comment.mjs';
 import { FACTORS, FACTOR_LABELS, LEVEL_LABELS } from './levels.mjs';
 
 export const SUMMARY_MARKER = '<!-- pr-summary -->';
@@ -30,6 +31,20 @@ const CATEGORY = {
   complexity: '복잡도',
 };
 const ciIcon = (c) => ({ success: '✅', skipped: '⏭️', failure: '❌', cancelled: '⏹️', missing: '—' })[c] ?? '⏳';
+/** Vercel 봇 코멘트처럼: 상태 · Preview · Inspect · 마이그레이션 · 스모크 · 갱신 시각 */
+export function previewCell(ci) {
+  const parts = [];
+  if (ci.deploy === 'success') parts.push('✅ Ready');
+  else if (ci.deploy === 'failure') parts.push('❌ Error');
+  else parts.push(ciIcon(ci.preview));
+  if (ci.previewUrl) parts.push(`[Preview](${ci.previewUrl})`);
+  if (ci.inspectUrl) parts.push(`[Inspect](${ci.inspectUrl})`);
+  if (ci.migrate) parts.push(`마이그레이션 ${ciIcon(ci.migrate)}`);
+  if (ci.smoke) parts.push(`스모크 ${ciIcon(ci.smoke)}`);
+  if (ci.previewAt) parts.push(kst(new Date(ci.previewAt)));
+  return parts.join(' · ');
+}
+
 const cell = (text) => String(text ?? '').replace(/\|/g, '\\|').replace(/\n+/g, ' ');
 
 function verdictText(assessment) {
@@ -81,14 +96,7 @@ export function renderSummary({ assessment, gate, ci, previous = null, acceptanc
   L.push('| 단계 | 결과 |');
   L.push('| --- | --- |');
   L.push(`| test (lint·type·test·빈 DB 마이그레이션·build) | ${ciIcon(ci.test)} |`);
-  const previewDetail = [
-    ci.migrate ? `마이그레이션 ${ciIcon(ci.migrate)}` : null,
-    ci.smoke ? `스모크 ${ciIcon(ci.smoke)}` : null,
-    ci.previewUrl ? ci.previewUrl : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  L.push(`| preview (프로덕션 복제 DB) | ${ciIcon(ci.preview)} ${previewDetail} |`);
+  L.push(`| preview (프로덕션 복제 DB) | ${previewCell(ci)} |`);
   if (ci.autofix && ci.autofix !== 'skipped' && ci.autofix !== 'missing') L.push(`| auto-fix | ${ciIcon(ci.autofix)} |`);
   L.push(`| AI 리뷰 | ${a.review ? verdictText(a) : '건너뜀 (CI 실패·비활성·장애) — 규칙 기반 점수만'} |`);
 
