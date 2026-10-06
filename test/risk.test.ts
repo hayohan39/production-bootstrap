@@ -221,6 +221,12 @@ describe("scanChanges", () => {
       head: { "package.json": JSON.stringify({ dependencies: { next: "^16.1.0", zod: "^4.0.0" } }) },
     });
     expect(ids(result)).toEqual(expect.arrayContaining(["deps.added", "deps.major"]));
+    const patch = scan([{ path: "package.json", added: ["x"] }], {
+      base: { "package.json": JSON.stringify({ dependencies: { pg: "^8.23.0" } }) },
+      head: { "package.json": JSON.stringify({ dependencies: { pg: "^8.23.1" } }) },
+    });
+    expect(ids(patch)).toContain("deps.updated");
+    expect(patch.floors.security).toBe(5);
     expect(result.floors).toMatchObject({ security: 5, compatibility: 10 });
   });
 

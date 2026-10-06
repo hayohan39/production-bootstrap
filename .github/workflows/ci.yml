@@ -243,6 +243,7 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # CI 실패 → Claude 가 로그를 읽고 고쳐서 PR 브랜치에 push.
+  # Dependabot PR 은 제외한다(시크릿이 없어 돌지 못하고, 의존성 호환 문제는 사람이 판단할 일이다).
   #
   # 이 push 가 CI 를 다시 돌리려면 GITHUB_TOKEN 이 아닌 토큰으로 push 해야 한다.
   # Claude GitHub App 이 설치되어 있으면 action 이 App 토큰을 쓰므로 재실행된다.
@@ -257,6 +258,7 @@ jobs:
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.draft == false
       && !contains(github.event.pull_request.labels.*.name, 'no-autofix')
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
