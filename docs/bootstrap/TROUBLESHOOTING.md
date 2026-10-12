@@ -45,6 +45,13 @@ Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 
 
 ## CI / 프리뷰
 
+**품질 리뷰(🧹)가 안 붙음** — CI 가 실패했거나(그땐 auto-fix 가 돈다), draft, Dependabot, `no-refine` 라벨,
+`CLAUDE_REFINE=false`, 또는 HEAD 가 이미 `[claude-refine]` 커밋이다(push 당 1회).
+
+**`[claude-refine]` 커밋 뒤 세션에서 push 가 거절됨** — CI 가 브랜치에 커밋을 더했다. `git pull origin <브랜치>` 후 다시 push.
+
+**품질 리뷰가 원치 않는 정리를 했다** — 그 커밋을 revert 하고 PR 에 `no-refine` 라벨. 기준을 바꾸려면 `.github/review/quality.md`.
+
 **auto-fix 가 push 했는데 CI 가 다시 안 돎** — `GITHUB_TOKEN` push 는 워크플로를 트리거하지 않는다. Claude App 또는 `BOT_PAT`.
 
 **`Migrations are append-only` 실패** — main 에 있는 `.sql` 을 고쳤다. 되돌리고 새 마이그레이션으로.

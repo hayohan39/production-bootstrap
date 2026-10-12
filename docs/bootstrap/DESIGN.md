@@ -44,6 +44,20 @@ Claude 클라우드 세션(웹·모바일)의 GitHub 접근은 전용 프록시�
 - **운영용 추가 제한**: 도구를 허용 목록으로 좁혔다(`npm`·`node`·`git`·`gh pr comment`, 파일 편집).
   `.github/` 와 `scripts/risk/` 는 편집 금지, 라벨·PR 상태를 바꾸는 명령은 쓸 수 없다.
 
+## 4-1. 품질 리뷰 (refine)
+
+CI 가 통과하면 Claude 가 `.github/review/quality.md` 기준(덧붙임·재사용·단순화·일관성·빈틈)으로 PR 을 한 번 더 본다.
+PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드를 얼마나 깔끔하게 짰나".
+
+- **동작이 바뀌지 않는 국소적 정리만** 자동 반영한다(`npm run check` 통과 필수, 실패하면 되돌리고 제안으로).
+  여러 파일·공개 인터페이스·테스트 추가는 제안 코멘트로만 남기고 사람이 `@claude` 로 지시한다.
+- 반복 방지: HEAD 가 이미 `[claude-refine]` 커밋이면 건너뛴다(`REFINE_MAX_ROUNDS`, 기본 1).
+- `migrations/`, `.github/`, `scripts/risk/` 는 편집 도구 수준에서 막는다.
+- refine 은 `ci.yml` 안에 있어 PR 의 버전으로 돈다. 코드를 고치는 도우미일 뿐 게이트가 아니므로 괜찮다 —
+  정리된 커밋도 다시 CI 를 거치고, Risk 평가는 여전히 main 의 규칙(`pr-review.yml`)으로 한다.
+  refine 이 push 하면 이전 커밋의 PR review 는 "head 가 바뀜" 으로 건너뛰고 새 커밋이 평가된다.
+- 세션에서 PR 을 올리기 전 같은 기준으로 스스로 다듬게 한다(CLAUDE.md). CI 쪽은 안전망.
+
 ## 5. CI 는 ubuntu 만
 
 로컬 Windows 에서도 돌아가도록 `.gitattributes`(LF 고정), npm scripts 의 POSIX 문법 금지, `path.join` 규칙은 유지한다.

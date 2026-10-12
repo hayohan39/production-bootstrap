@@ -36,4 +36,6 @@ security finding(blocker)으로 보고한다.
      mitigations(구체적인 완화책), unknowns(사람이 확인해야 할 것)를 채운다. 위험이 낮으면 짧게.
 6. summary 는 3줄 이내: 무엇을 바꾸는지, merge 하면 사용자에게 무엇이 달라지는지.
 
-품질 문제(중복, 이름, 긴 함수)는 findings(minor/complexity)로만 쓰고 Risk 점수를 올리는 근거로 쓰지 않는다.
+품질 문제(덧붙임, 중복, 단순화, 일관성)는 CI 의 품질 리뷰(`refine` job, `.github/review/quality.md`)가 따로 보고
+반영한다. 여기서는 반복하지 않는다 — 다만 품질 문제가 버그·보안·호환성으로 이어지면 그 범주로 쓴다.
+품질은 Risk 점수를 올리는 근거로 쓰지 않는다.
