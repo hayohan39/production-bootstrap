@@ -47,7 +47,7 @@ Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 
 
 **품질 리뷰(🧹)가 안 붙음** — CI 가 실패했거나(그땐 auto-fix 가 돈다), draft, Dependabot, `no-refine` 라벨,
 `CLAUDE_REFINE=false`, 또는 HEAD 가 이미 `[claude-refine]` 커밋이다(push 당 1회).
-🧹 코멘트에 "워크플로를 바꿔서 건너뜁니다" 가 있으면 그 PR 이 `.github/workflows/` 를 고쳤다 — merge 후 다음 PR 부터 돈다.
+🧹 코멘트에 "`ci.yml` 을 바꿔서 건너뜁니다" 가 있으면 그 PR 이 `ci.yml` 을 고쳤다 — merge 후 다음 PR 부터 돈다.
 
 **`[claude-refine]` 커밋 뒤 세션에서 push 가 거절됨** — CI 가 브랜치에 커밋을 더했다. `git pull origin <브랜치>` 후 다시 push.
 
