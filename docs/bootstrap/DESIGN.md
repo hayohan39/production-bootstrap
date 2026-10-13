@@ -53,7 +53,7 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
   여러 파일·공개 인터페이스·테스트 추가는 제안 코멘트로만 남기고 사람이 `@claude` 로 지시한다.
 - 반복 방지: HEAD 가 이미 `[claude-refine]` 커밋이면 건너뛴다(`REFINE_MAX_ROUNDS`, 기본 1).
 - `migrations/`, `.github/`, `scripts/risk/` 는 네 겹으로 막는다: 프롬프트, 편집 도구(Edit·Write) 차단, pre-push 훅,
-  사후 검사(`[claude-refine]` 또는 claude[bot] 커밋이 건드렸으면 🧹 코멘트에 경고하고 job 을 실패시킨다).
+  사후 검사(`[claude-refine]` 커밋이 건드렸으면 🧹 코멘트에 경고하고 job 을 실패시킨다).
   pre-push 훅은 커밋 제목의 `[claude-refine]` 도 강제한다(빠지면 반복 방지가 안 된다).
   완전한 차단은 아니다: `npm run check` 가 PR 코드를 실행하는 이상 의도적 우회는 가능하다.
   마지막 방어선은 그 커밋도 다시 거치는 CI · 리뷰와 사람의 merge 다.

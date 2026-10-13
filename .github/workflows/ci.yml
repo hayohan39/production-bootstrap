@@ -384,9 +384,9 @@ jobs:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           git fetch -q origin "$HEAD_REF"
-          # 이 실행 중 사람이 push 한 커밋은 보지 않는다: [claude-refine] 커밋 또는 claude[bot] 이 만든 커밋이 바꾼 파일만.
-          range="$SHA..origin/$HEAD_REF"
-          bad=$( { git log --format= --name-only --grep="\[claude-refine\]" "$range"; git log --format= --name-only --author="claude\[bot\]" "$range"; } | sort -u | grep -E '^(migrations|\.github|scripts/risk)/' || true)
+          # [claude-refine] 커밋이 바꾼 파일만 본다(태그는 pre-push 훅이 강제한다). 그 사이 사람·@claude·autofix 가
+          # push 한 커밋은 정상 변경일 수 있으므로 세지 않는다 — 작성자로 고르면 @claude 커밋(claude[bot])을 오탐한다.
+          bad=$(git log --format= --name-only --grep="\[claude-refine\]" "$SHA..origin/$HEAD_REF" | sort -u | grep -E '^(migrations|\.github|scripts/risk)/' || true)
           if [ -n "$bad" ]; then
             mkdir -p .refine
             printf '%s\n' "$bad" > .refine/violations.txt
