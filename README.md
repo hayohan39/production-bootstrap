@@ -13,6 +13,7 @@
           ▼
    CI ─ test (append-only 마이그레이션 · lint · typecheck · test · 빈 DB 마이그레이션 · build)
       ─ preview (프로덕션 복제 DB 에 마이그레이션 → Vercel 프리뷰 → 스모크)
+      ├ 통과 → Claude 품질 리뷰: 작은 정리는 직접 커밋, 큰 리팩터링은 제안 (push 당 1회)
       └ 실패 → Claude auto-fix (PR 당 최대 3회)
           │
           ▼
@@ -71,7 +72,7 @@ PR 이 "좋은 코드인가" 가 아니라 **"프로덕션에서 잘못되면 �
 ```
 .github/
   workflows/
-    ci.yml               test → preview(스모크) → autofix
+    ci.yml               test → preview(스모크) → refine(품질 리뷰·정리) / autofix(실패 시)
     pr-review.yml        CI 완료 → 규칙 스캔 + Claude 리뷰 → Risk Score → 종합 코멘트·라벨·risk-gate
     risk-gate.yml        라벨/본문 변경 → 게이트 재계산, risk-accepted 권한 확인
     deploy.yml           main → 스냅샷 → 마이그레이션 → 스테이징 → 승격 → 헬스체크 → 자동 롤백

@@ -161,6 +161,7 @@ const LABELS = [
   ['risk:critical', '6e0b0b', 'Risk Score CRITICAL'],
   ['risk-accepted', '0e8a16', '관리자가 이 커밋의 위험을 수락함 (CRITICAL merge 조건)'],
   ['no-autofix', 'bfdadc', 'CI 실패 시 Claude auto-fix 끄기'],
+  ['no-refine', 'bfdadc', 'CI 뒤 Claude 품질 리뷰(자동 정리) 끄기'],
 ];
 
 function ensureLabels(repo) {

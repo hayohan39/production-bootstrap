@@ -60,6 +60,8 @@ https://github.com/apps/claude → Configure → Repository access → **All rep
 | --- | --- | --- |
 | `AUTOFIX_MAX_ATTEMPTS` | `3` | PR 당 auto-fix 최대 시도 |
 | `CLAUDE_REVIEW` | (켜짐) | `false` 면 AI 리뷰를 끈다(규칙 기반 Risk 와 게이트는 계속) |
+| `CLAUDE_REFINE` | (켜짐) | `false` 면 CI 뒤 품질 리뷰(refine) 끔. PR 하나만 끄려면 `no-refine` 라벨 |
+| `REFINE_MAX_ROUNDS` | `1` | 작성자 push 한 번에 품질 반영 커밋을 몇 번까지 연속으로 허용할지 |
 | `PREDEPLOY_SNAPSHOTS` | `3` | 배포 전 DB 스냅샷 브랜치 보관 개수. `0` 이면 끈다 |
 
 ## 5. 브랜치 보호 (new-project 가 실패했을 때 수동으로)

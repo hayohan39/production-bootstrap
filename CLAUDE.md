@@ -30,7 +30,10 @@ GitHub 에서 PR 종합 코멘트(CI · 코드 리뷰 · Risk Score)를 보고 m
    묻는다(아래 "인프라 결정"). 그 외에는 합리적으로 판단해 진행하고 PR 에 적는다.
 3. 구현한다. **한 PR 에 한 목적.** 무관한 리팩터링은 하지 않는다. 위험한 변경(스키마 삭제·이름 변경,
    인증, 공통 모듈)은 작게 나눈다 — Risk 등급이 낮은 PR 여러 개가 CRITICAL 하나보다 낫다.
-4. **push 전에 반드시** `npm run check` (lint → typecheck → test → build) 를 통과시킨다.
+4. **push 전에 diff 를 스스로 다듬는다**: `.github/review/quality.md` 기준(덧붙임·재사용·단순화·일관성·빈틈)으로
+   `git diff origin/main...HEAD` 를 한 번 훑는다. 세션에 `/simplify` 스킬이 있으면 그걸 써도 된다.
+   CI 뒤의 품질 리뷰는 안전망이다 — 거기서 지적이 적을수록 좋다.
+   그리고 **반드시** `npm run check` (lint → typecheck → test → build) 를 통과시킨다.
    DB 를 건드렸으면 로컬 Postgres 에 `npm run migrate` 도 돌려 본다(아래 참고).
 5. **예상 Risk 를 먼저 본다**: `node scripts/risk/cli.mjs scan --base origin/main --head HEAD`
    (규칙 기반 최저치만 나온다. 최종 점수는 CI 뒤 AI 리뷰가 더한다.) HIGH 이상이 나올 변경이면
@@ -46,6 +49,8 @@ GitHub 에서 PR 종합 코멘트(CI · 코드 리뷰 · Risk Score)를 보고 m
 9. **merge 하지 않는다.** 사용자가 요청해도 "PR 에서 merge 버튼을 눌러 주세요" 라고 안내한다.
 
 PR 이 이미 열려 있는 브랜치에서 추가 요청을 받으면 같은 브랜치에 커밋을 더한다.
+그 전에 `git pull origin <브랜치>` — CI 가 `[claude-refine]`·`[claude-autofix]` 커밋을 더했을 수 있다.
+품질 리뷰 코멘트(🧹)의 **제안**을 사용자가 반영해 달라고 하면 같은 브랜치에서 고친다.
 
 ### Risk Score 를 대하는 태도
 
@@ -79,6 +84,7 @@ DB 복구(스냅샷/PITR)는 데이터에 영향이 크므로 절차를 설명�
 PR 생성/push ─► ci.yml
                  ├ test     마이그레이션 append-only 확인 · lint · typecheck · test · 빈 Postgres 마이그레이션 · build
                  ├ preview  Neon 브랜치(프로덕션 복제)에 마이그레이션 → Vercel 프리뷰 → 스모크 테스트
+                 ├ refine   위가 통과하면 Claude 품질 리뷰 → 작은 정리는 [claude-refine] 커밋, 큰 것은 제안 (push 당 1회)
                  └ autofix  위가 실패하면 Claude 가 고쳐서 [claude-autofix] 커밋 (PR 당 최대 3회)
              ─► risk-gate.yml (pull_request_target)  새 커밋이면 risk-gate 를 "대기" 로
 CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)
