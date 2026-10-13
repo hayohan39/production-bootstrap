@@ -52,7 +52,16 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 - **동작이 바뀌지 않는 국소적 정리만** 자동 반영한다(`npm run check` 통과 필수, 실패하면 되돌리고 제안으로).
   여러 파일·공개 인터페이스·테스트 추가는 제안 코멘트로만 남기고 사람이 `@claude` 로 지시한다.
 - 반복 방지: HEAD 가 이미 `[claude-refine]` 커밋이면 건너뛴다(`REFINE_MAX_ROUNDS`, 기본 1).
-- `migrations/`, `.github/`, `scripts/risk/` 는 편집 도구 수준에서 막는다.
+- `migrations/`, `.github/`, `scripts/risk/` 는 네 겹으로 막는다: 프롬프트, 편집 도구(Edit·Write) 차단, pre-push 훅,
+  사후 검사(`[claude-refine]` 커밋이 건드렸으면 🧹 코멘트에 경고. 그 push 가 실행을 취소하므로
+  job 은 '실패' 가 아니라 '취소됨' 으로 보일 수 있다 — 신호는 코멘트 경고다).
+  pre-push 훅은 커밋 제목의 `[claude-refine]` 도 강제한다(빠지면 반복 방지가 안 된다).
+  완전한 차단은 아니다: `npm run check` 가 PR 코드를 실행하는 이상 의도적 우회는 가능하다.
+  마지막 방어선은 그 커밋도 다시 거치는 CI · 리뷰와 사람의 merge 다.
+- push 는 마지막에 한 번. `ci.yml` 의 concurrency 가 push 직후 이 실행을 취소하므로 리포트를 먼저 쓰고,
+  리포트 게시는 `always()` 라 취소돼도 올라간다.
+- `ci.yml` 을 바꾸는 PR 에서는 건너뛴다 — claude-code-action 은 App 토큰을 받을 때 실행 중인 워크플로가
+  기본 브랜치와 같은지 검사한다(`BOT_PAT` 을 쓰면 검사가 없어 그대로 돈다).
 - refine 은 `ci.yml` 안에 있어 PR 의 버전으로 돈다. 코드를 고치는 도우미일 뿐 게이트가 아니므로 괜찮다 —
   정리된 커밋도 다시 CI 를 거치고, Risk 평가는 여전히 main 의 규칙(`pr-review.yml`)으로 한다.
   refine 이 push 하면 이전 커밋의 PR review 는 "head 가 바뀜" 으로 건너뛰고 새 커밋이 평가된다.
