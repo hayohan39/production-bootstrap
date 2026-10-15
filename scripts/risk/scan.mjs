@@ -307,7 +307,13 @@ function where(file, line) {
 
 /** 앱 소스가 있는 경로 접두사(config.sourceRoots). 기본은 src/ 하나. 루트에 app/·lib/ 을 두는 프로젝트는 여러 개. */
 export function sourceRoots(config) {
-  return config?.sourceRoots?.length ? config.sourceRoots : ['src/'];
+  const roots = config?.sourceRoots ?? [];
+  if (!Array.isArray(roots) || roots.some((r) => typeof r !== 'string' || r === '')) {
+    throw new Error('config.sourceRoots 는 경로 문자열 배열이어야 합니다 (예: ["src/"])');
+  }
+  if (roots.length === 0) return ['src/'];
+  // 확장자가 없으면 디렉터리로 본다("app" → "app/"). cli.mjs 의 git grep 경로와 같은 뜻이 되게.
+  return roots.map((r) => (r.endsWith('/') || /\.[^/]+$/.test(r) ? r : `${r}/`));
 }
 
 /** 앱 소스(런타임 코드) 파일인가 */

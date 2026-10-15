@@ -6,7 +6,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { canAccept, runScan } from "../scripts/risk/cli.mjs";
 import { bandLevel, toAnchor } from "../scripts/risk/levels.mjs";
 import { decodeData, previewCell, renderSummary } from "../scripts/risk/render.mjs";
-import { area, categorize, classifyStatement, globToRegExp, isSource, parseUnifiedDiff, scanChanges } from "../scripts/risk/scan.mjs";
+import {
+  area,
+  categorize,
+  classifyStatement,
+  globToRegExp,
+  isSource,
+  parseUnifiedDiff,
+  scanChanges,
+  sourceRoots,
+} from "../scripts/risk/scan.mjs";
 import { applyPolicy, finalize, sectionFilled } from "../scripts/risk/score.mjs";
 
 const config = JSON.parse(await readFile(path.resolve(".github/risk/config.json"), "utf8"));
@@ -148,6 +157,13 @@ describe("sourceRoots (앱 소스 위치)", () => {
     expect(isSource("proxy.ts", rootLayout)).toBe(true);
     expect(isSource("proxy.tsx", rootLayout)).toBe(false);
     expect(isSource("scripts/migrate.mjs", rootLayout)).toBe(false);
+  });
+
+  it("슬래시 없는 디렉터리 이름도 디렉터리로, 잘못된 형식은 바로 알린다", () => {
+    expect(sourceRoots({ sourceRoots: ["app", "lib/", "proxy.ts"] })).toEqual(["app/", "lib/", "proxy.ts"]);
+    expect(isSource("app/page.tsx", { sourceRoots: ["app"] })).toBe(true);
+    expect(isSource("application.ts", { sourceRoots: ["app"] })).toBe(false);
+    expect(() => sourceRoots({ sourceRoots: "src/" })).toThrow(/배열/);
   });
 
   it("영역 이름은 src/ 유무와 상관없이 같은 규칙", () => {
