@@ -305,17 +305,29 @@ function where(file, line) {
   return line ? `${file.path}:${line}` : file.path;
 }
 
-/** src 아래 런타임 파일을 "영역" 으로 묶는다(Scope 판단용). */
-function area(path) {
+/** 앱 소스가 있는 경로 접두사(config.sourceRoots). 기본은 src/ 하나. 루트에 app/·lib/ 을 두는 프로젝트는 여러 개. */
+export function sourceRoots(config) {
+  return config?.sourceRoots?.length ? config.sourceRoots : ['src/'];
+}
+
+/** 앱 소스(런타임 코드) 파일인가 */
+export function isSource(path, config) {
+  return sourceRoots(config).some((root) => (root.endsWith('/') ? path.startsWith(root) : path === root));
+}
+
+/** 앱 소스 파일을 "영역" 으로 묶는다(Scope 판단용). src/ 가 있든 없든(app/ 이 루트에 있어도) 같은 규칙. */
+export function area(path) {
   const parts = path.split('/');
-  if (parts[0] !== 'src') return parts[0];
-  if (parts[1] === 'app') {
-    const seg = parts.slice(2).find((p) => !/^\(.*\)$/.test(p));
-    if (!seg || /\.(tsx?|css)$/.test(seg)) return 'src/app(root)';
-    return `src/app/${seg}`;
+  const prefix = parts[0] === 'src' ? 'src/' : '';
+  const rest = prefix ? parts.slice(1) : parts;
+  if (rest.length === 1) return prefix ? `src/${rest[0].replace(/\.[^.]+$/, '')}` : rest[0].replace(/\.[^.]+$/, '');
+  if (rest[0] === 'app') {
+    const seg = rest.slice(1).find((p) => !/^\(.*\)$/.test(p));
+    if (!seg || /\.(tsx?|css)$/.test(seg)) return `${prefix}app(root)`;
+    return `${prefix}app/${seg}`;
   }
-  if (parts.length > 3) return `src/${parts[1]}/${parts[2]}`;
-  return `src/${parts[1]}/${(parts[2] ?? '').replace(/\.[^.]+$/, '')}`;
+  if (rest.length > 2) return `${prefix}${rest[0]}/${rest[1]}`;
+  return `${prefix}${rest[0]}/${(rest[1] ?? '').replace(/\.[^.]+$/, '')}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +338,7 @@ function area(path) {
  * @param {Array} [input.changedPaths] 이름만 바뀐 것 포함 전체 경로 목록 [{path, status}]
  * @param {(path:string)=>string|null} input.readBase  base 의 파일 내용
  * @param {(path:string)=>string|null} input.readHead  head 의 파일 내용
- * @param {(word:string)=>boolean} input.baseReferences base 의 src/ 에 이 단어가 쓰이는지
+ * @param {(word:string)=>boolean} input.baseReferences base 의 앱 소스(config.sourceRoots)에 이 단어가 쓰이는지
  * @param {object} input.config        .github/risk/config.json
  */
 export function scanChanges({ files, changedPaths, readBase, readHead, baseReferences, config }) {
@@ -348,7 +360,7 @@ export function scanChanges({ files, changedPaths, readBase, readHead, baseRefer
   const entries = all.map((file) => ({ file, cats: categorize(file.path, config) }));
 
   const runtime = entries.filter(({ cats }) => !isRuntimeFree(cats));
-  const srcRuntime = runtime.filter(({ file, cats }) => file.path.startsWith('src/') && !cats.has('test'));
+  const srcRuntime = runtime.filter(({ file, cats }) => isSource(file.path, config) && !cats.has('test'));
   const testsTouched = entries.some(({ file, cats }) => cats.has('test') && file.status !== 'D');
 
   // --- 비밀값 (모든 파일, 추가된 줄만, 값은 절대 출력하지 않는다)
@@ -381,7 +393,7 @@ export function scanChanges({ files, changedPaths, readBase, readHead, baseRefer
 
   // --- 보안 / 호환성 (코드)
   for (const { file, cats } of entries) {
-    const isSrc = file.path.startsWith('src/') && !cats.has('test');
+    const isSrc = isSource(file.path, config) && !cats.has('test');
     if (cats.has('auth')) add('security.auth-path', { security: 15 }, 'HIGH', '인증·세션·권한 관련 파일 변경', [file.path]);
 
     if (cats.has('api')) {
@@ -444,7 +456,7 @@ export function scanChanges({ files, changedPaths, readBase, readHead, baseRefer
   const ignoreEnv = new Set(config.ignoreEnv ?? []);
   const newEnv = new Map();
   for (const { file, cats } of entries) {
-    if (!file.path.startsWith('src/') || cats.has('test')) continue;
+    if (!isSource(file.path, config) || cats.has('test')) continue;
     for (const { line, text } of file.added) {
       for (const m of text.matchAll(ENV_REF)) {
         const name = m[1] ?? m[2] ?? m[3];
@@ -544,7 +556,7 @@ export function scanChanges({ files, changedPaths, readBase, readHead, baseRefer
           { migration: 20, compatibility: 20 },
           'CRITICAL',
           '현재 배포된 코드가 아직 쓰는 이름을 지우거나 바꾼다 — 마이그레이션 직후부터 새 코드가 뜨기 전까지, 그리고 앱 롤백 시 장애 (expand → contract 로 나눌 것)',
-          [`${path} — ${item.detail} (main 의 src/ 에서 "${item.ident}" 참조)`],
+          [`${path} — ${item.detail} (main 의 앱 소스에서 "${item.ident}" 참조)`],
         );
       }
     }

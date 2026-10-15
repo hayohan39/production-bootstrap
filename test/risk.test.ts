@@ -6,14 +6,17 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { canAccept, runScan } from "../scripts/risk/cli.mjs";
 import { bandLevel, toAnchor } from "../scripts/risk/levels.mjs";
 import { decodeData, previewCell, renderSummary } from "../scripts/risk/render.mjs";
-import { categorize, classifyStatement, globToRegExp, parseUnifiedDiff, scanChanges } from "../scripts/risk/scan.mjs";
+import { area, categorize, classifyStatement, globToRegExp, isSource, parseUnifiedDiff, scanChanges } from "../scripts/risk/scan.mjs";
 import { applyPolicy, finalize, sectionFilled } from "../scripts/risk/score.mjs";
 
 const config = JSON.parse(await readFile(path.resolve(".github/risk/config.json"), "utf8"));
 
 type FileInput = { path: string; status?: string; added?: string[]; removed?: string[]; oldPath?: string };
 
-function scan(files: FileInput[], opts: { base?: Record<string, string>; head?: Record<string, string>; refs?: string[] } = {}) {
+function scan(
+  files: FileInput[],
+  opts: { base?: Record<string, string>; head?: Record<string, string>; refs?: string[]; config?: object } = {},
+) {
   return scanChanges({
     files: files.map((f) => ({
       path: f.path,
@@ -26,7 +29,7 @@ function scan(files: FileInput[], opts: { base?: Record<string, string>; head?: 
     readBase: (p: string) => opts.base?.[p] ?? null,
     readHead: (p: string) => opts.head?.[p] ?? null,
     baseReferences: (word: string) => (opts.refs ?? []).includes(word),
-    config,
+    config: opts.config ?? config,
   });
 }
 
@@ -127,6 +130,41 @@ describe("SQL 분류", () => {
     expect(kinds("alter table users enable row level security")).toEqual(["permission"]);
     expect(kinds("commit")).toEqual(["tx-control"]);
     expect(kinds("do $$ begin perform 1; end $$")).toEqual(["unclassified"]);
+  });
+});
+
+describe("sourceRoots (앱 소스 위치)", () => {
+  // 루트에 app/·lib/ 을 두는 프로젝트(src/ 없음)
+  const rootLayout = { ...config, sourceRoots: ["app/", "lib/", "components/", "proxy.ts"] };
+
+  it("기본은 src/ — 설정이 없거나 비어 있어도", () => {
+    expect(isSource("src/lib/db.ts", config)).toBe(true);
+    expect(isSource("app/page.tsx", config)).toBe(false);
+    expect(isSource("src/lib/db.ts", {})).toBe(true);
+  });
+
+  it("접두사는 디렉터리, 슬래시가 없으면 그 파일만", () => {
+    expect(isSource("app/api/x/route.ts", rootLayout)).toBe(true);
+    expect(isSource("proxy.ts", rootLayout)).toBe(true);
+    expect(isSource("proxy.tsx", rootLayout)).toBe(false);
+    expect(isSource("scripts/migrate.mjs", rootLayout)).toBe(false);
+  });
+
+  it("영역 이름은 src/ 유무와 상관없이 같은 규칙", () => {
+    expect(area("src/app/api/todos/route.ts")).toBe("src/app/api");
+    expect(area("src/app/(admin)/page.tsx")).toBe("src/app(root)");
+    expect(area("src/lib/db.ts")).toBe("src/lib/db");
+    expect(area("app/api/todos/route.ts")).toBe("app/api");
+    expect(area("app/(admin)/_actions/usages.ts")).toBe("app/_actions");
+    expect(area("lib/leave/summary.ts")).toBe("lib/leave");
+    expect(area("lib/db/index.ts")).toBe("lib/db");
+    expect(area("proxy.ts")).toBe("proxy");
+  });
+
+  it("설정한 위치의 새 환경변수·런타임 변경만 센다", () => {
+    const files = [{ path: "lib/mail.ts", added: ["const key = process.env.MAIL_API_KEY;"] }];
+    expect(ids(scan(files, { config: rootLayout }))).toEqual(expect.arrayContaining(["config.new-env", "scope.areas"]));
+    expect(ids(scan(files))).not.toContain("config.new-env");
   });
 });
 

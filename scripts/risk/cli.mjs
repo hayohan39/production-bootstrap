@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { gh, paginate, repo } from './github.mjs';
 import { LEVELS, LEVEL_SLUGS } from './levels.mjs';
 import { decodeData, renderFacts, renderSummary, SUMMARY_MARKER } from './render.mjs';
-import { parseUnifiedDiff, scanChanges } from './scan.mjs';
+import { parseUnifiedDiff, scanChanges, sourceRoots } from './scan.mjs';
 import { applyPolicy, finalize } from './score.mjs';
 
 const ACCEPT_LABEL = 'risk-accepted';
@@ -78,7 +78,7 @@ export function runScan({ base, head, out, configPath = path.join('.github', 'ri
     baseReferences: (word) => {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(word)) return false;
       if (!cache.has(word)) {
-        cache.set(word, tryGit('grep', '-q', '-w', '-i', '-e', word, mergeBase, '--', 'src') !== null);
+        cache.set(word, tryGit('grep', '-q', '-w', '-i', '-e', word, mergeBase, '--', ...sourceRoots(config)) !== null);
       }
       return cache.get(word);
     },

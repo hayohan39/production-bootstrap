@@ -1,5 +1,6 @@
 {
-  "$comment": "scripts/risk/scan.mjs 가 쓰는 경로 분류. 프로젝트 구조가 바뀌면 여기를 고친다. 이 파일을 바꾸는 PR 은 리스크 평가 자체를 바꾸므로 최소 VERY HIGH 로 평가된다.",
+  "$comment": "scripts/risk/scan.mjs 가 쓰는 경로 분류. 프로젝트 구조가 바뀌면 여기를 고친다. 이 파일을 바꾸는 PR 은 리스크 평가 자체를 바꾸므로 최소 VERY HIGH 로 평가된다. sourceRoots 는 앱 소스(런타임 코드)가 있는 경로 접두사 — 루트에 app/·lib/ 을 두는 프로젝트는 [\"app/\", \"lib/\", …] 로 바꾸고 아래 sharedCore·auth·api·page 경로도 맞춘다.",
+  "sourceRoots": ["src/"],
   "paths": {
     "docs": ["**/*.md", "docs/**", "LICENSE", ".editorconfig", ".gitattributes"],
     "tooling": [".claude/**", ".vscode/**"],
