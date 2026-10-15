@@ -320,7 +320,7 @@ export function area(path) {
   const parts = path.split('/');
   const prefix = parts[0] === 'src' ? 'src/' : '';
   const rest = prefix ? parts.slice(1) : parts;
-  if (rest.length === 1) return prefix ? `src/${rest[0].replace(/\.[^.]+$/, '')}` : rest[0].replace(/\.[^.]+$/, '');
+  if (rest.length === 1) return `${prefix}${rest[0].replace(/\.[^.]+$/, '')}`;
   if (rest[0] === 'app') {
     const seg = rest.slice(1).find((p) => !/^\(.*\)$/.test(p));
     if (!seg || /\.(tsx?|css)$/.test(seg)) return `${prefix}app(root)`;
