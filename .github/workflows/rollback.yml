@@ -65,9 +65,7 @@ jobs:
       - name: Roll back
         env:
           TARGET: ${{ steps.target.outputs.url }}
-        run: |
-          npm install --global vercel@latest >/dev/null
-          vercel rollback "$TARGET" --timeout 5m --token="$VERCEL_TOKEN"
+        run: node scripts/release.mjs rollback "$TARGET"
 
       - name: Health check
         run: |
