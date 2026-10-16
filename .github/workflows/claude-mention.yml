@@ -38,6 +38,10 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.BOT_PAT || github.token }}
+          # 토큰을 체크아웃에 남기지 않는다. actions/checkout v6+ 는 GITHUB_TOKEN 을 includeIf 로 따로 둔 설정 파일에 넣는데
+          # claude-code-action 은 그것을 지우지 못해서, Claude 의 push 가 App 토큰이 아니라 GITHUB_TOKEN(github-actions[bot])으로
+          # 나가고 그 push 의 CI 가 "승인 대기(action_required)" 로 멈춘다. push 인증은 action 이 원격 URL 에 직접 넣는다.
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
