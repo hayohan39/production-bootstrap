@@ -20,20 +20,36 @@ import { gh, repo } from './risk/github.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function vercel(apiPath, { method = 'GET' } = {}) {
+/** 조회(GET)는 일시적 오류(네트워크, 429, 5xx)면 몇 번 다시 시도한다. 변경 요청(POST)은 한 번만 보낸다. */
+async function vercel(apiPath, { method = 'GET', retries = method === 'GET' ? 3 : 0, retryDelayMs = 2_000 } = {}) {
   const token = process.env.VERCEL_TOKEN;
   if (!token) throw new Error('VERCEL_TOKEN 이 없습니다.');
   const url = new URL(`https://api.vercel.com${apiPath}`);
   // 팀 계정이면 팀 범위로 조회해야 한다(개인 계정의 orgId 는 team_ 로 시작하지 않는다).
   if (process.env.VERCEL_ORG_ID?.startsWith('team_')) url.searchParams.set('teamId', process.env.VERCEL_ORG_ID);
-  const res = await fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }) },
-    ...(method === 'GET' ? {} : { body: '{}' }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`Vercel ${method} ${apiPath} → HTTP ${res.status}: ${data.error?.message ?? ''}`);
-  return data;
+  for (let attempt = 0; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(url, {
+        method,
+        headers: { Authorization: `Bearer ${token}`, ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }) },
+        ...(method === 'GET' ? {} : { body: '{}' }),
+      });
+    } catch (error) {
+      if (attempt < retries) {
+        await sleep(retryDelayMs * (attempt + 1));
+        continue;
+      }
+      throw error;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return data;
+    if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+      await sleep(retryDelayMs * (attempt + 1));
+      continue;
+    }
+    throw new Error(`Vercel ${method} ${apiPath} → HTTP ${res.status}: ${data.error?.message ?? ''}`);
+  }
 }
 
 function projectId() {
@@ -64,6 +80,8 @@ export function deploymentRef(urlOrId) {
  * 'done' | 'pending' | 실패면 Error 를 던진다.
  */
 export function aliasJobState(project, deploymentId, requestedAfter) {
+  // 작업 기록 모양과 상관없이, 프로덕션이 이미 이 배포를 가리키면 끝난 것이다.
+  if (project?.targets?.production?.id === deploymentId) return 'done';
   const job = project?.lastAliasRequest;
   if (!job || job.toDeploymentId !== deploymentId || (job.requestedAt ?? 0) < requestedAfter) return 'pending';
   if (job.jobStatus === 'succeeded') return 'done';
@@ -71,9 +89,15 @@ export function aliasJobState(project, deploymentId, requestedAfter) {
   throw new Error(`${job.type ?? '전환'} 작업이 ${job.jobStatus ?? '알 수 없는 상태'} 로 끝났습니다.`);
 }
 
-/** 프로덕션 트래픽을 그 배포로 옮기고 끝날 때까지 기다린다. kind: 'promote' | 'rollback' */
-export async function moveProduction(kind, urlOrId, { timeoutMs = 300_000, intervalMs = 5_000 } = {}) {
-  const deployment = await vercel(`/v13/deployments/${encodeURIComponent(deploymentRef(urlOrId))}`);
+/**
+ * 프로덕션 트래픽을 그 배포로 옮기고 끝날 때까지 기다린다.
+ * @param {'promote' | 'rollback'} kind
+ * @param {string} urlOrId
+ * @param {{ timeoutMs?: number, intervalMs?: number, retryDelayMs?: number }} [options]
+ */
+export async function moveProduction(kind, urlOrId, { timeoutMs = 300_000, intervalMs = 5_000, retryDelayMs = undefined } = {}) {
+  const get = (apiPath) => vercel(apiPath, retryDelayMs === undefined ? {} : { retryDelayMs });
+  const deployment = await get(`/v13/deployments/${encodeURIComponent(deploymentRef(urlOrId))}`);
   const project = projectId();
   // VERCEL_PROJECT_ID 가 이름일 수도 있어서 ID(prj_)일 때만 비교한다.
   const owner = deployment.projectId ?? deployment.project?.id;
@@ -87,7 +111,7 @@ export async function moveProduction(kind, urlOrId, { timeoutMs = 300_000, inter
   await vercel(`/${kind === 'promote' ? 'v10' : 'v9'}/projects/${encodeURIComponent(project)}/${kind}/${deployment.id}`, { method: 'POST' });
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const state = aliasJobState(await vercel(`/v9/projects/${encodeURIComponent(project)}`), deployment.id, requestedAfter);
+    const state = aliasJobState(await get(`/v9/projects/${encodeURIComponent(project)}`), deployment.id, requestedAfter);
     if (state === 'done') return deployment;
     if (Date.now() >= deadline) throw new Error(`${kind} 가 ${timeoutMs / 1000}초 안에 끝나지 않았습니다(Vercel 대시보드에서 상태 확인).`);
     await sleep(intervalMs);

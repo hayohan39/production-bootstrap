@@ -21,6 +21,10 @@ describe("aliasJobState", () => {
     expect(aliasJobState({}, "dpl_new", 1000)).toBe("pending");
   });
 
+  it("작업 기록과 상관없이 프로덕션이 이 배포를 가리키면 done", () => {
+    expect(aliasJobState({ targets: { production: { id: "dpl_new" } } }, "dpl_new", 1000)).toBe("done");
+  });
+
   it("실패는 바로 알린다", () => {
     expect(() => aliasJobState(job({ jobStatus: "failed" }), "dpl_new", 1000)).toThrow(/failed/);
   });
@@ -75,6 +79,34 @@ describe("moveProduction", () => {
     await expect(moveProduction("promote", "p.vercel.app")).rejects.toThrow(/프로덕션 빌드가 아니라/);
     stubVercel({ id: "dpl_new", url: "o.vercel.app", projectId: "prj_other", target: "production" });
     await expect(moveProduction("promote", "o.vercel.app")).rejects.toThrow(/이 프로젝트의 것이 아닙니다/);
+  });
+
+  it("조회 중 일시적 오류(5xx)는 다시 시도한다", async () => {
+    vi.stubEnv("VERCEL_TOKEN", "t");
+    vi.stubEnv("VERCEL_PROJECT_ID", "prj_1");
+    let projectCalls = 0;
+    vi.stubGlobal("fetch", async (url: URL) => {
+      if (url.pathname.startsWith("/v13/")) return new Response(JSON.stringify({ id: "dpl_new", url: "a", projectId: "prj_1", target: "production" }));
+      if (url.pathname === "/v9/projects/prj_1" && ++projectCalls === 1) return new Response("{}", { status: 503 });
+      return new Response(JSON.stringify({ targets: { production: { id: "dpl_new" } } }));
+    });
+    await expect(moveProduction("promote", "a", { intervalMs: 1, retryDelayMs: 1 })).resolves.toMatchObject({ id: "dpl_new" });
+    expect(projectCalls).toBe(2);
+  });
+
+  it("승격 요청(POST)은 다시 보내지 않는다", async () => {
+    vi.stubEnv("VERCEL_TOKEN", "t");
+    vi.stubEnv("VERCEL_PROJECT_ID", "prj_1");
+    let posts = 0;
+    vi.stubGlobal("fetch", async (url: URL, init: { method?: string } = {}) => {
+      if (init.method === "POST") {
+        posts++;
+        return new Response("{}", { status: 500 });
+      }
+      return new Response(JSON.stringify({ id: "dpl_new", url: "a", projectId: "prj_1", target: "production" }));
+    });
+    await expect(moveProduction("promote", "a", { intervalMs: 1, retryDelayMs: 1 })).rejects.toThrow(/HTTP 500/);
+    expect(posts).toBe(1);
   });
 
   it("시간 안에 끝나지 않으면 실패", async () => {

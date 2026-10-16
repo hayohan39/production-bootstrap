@@ -207,10 +207,33 @@ jobs:
         # vercel promote CLI 는 토큰의 "사용자" 조회부터 해서 토큰에 따라(팀 범위 등) User not found 로 실패한다 → REST API (scripts/release.mjs)
         run: node scripts/release.mjs promote "$URL"
 
+      # 승격 요청이 받아들여진 뒤 상태 확인에서 실패했으면 트래픽은 이미 옮겨졌을 수 있다.
+      # 프로덕션 도메인이 내보내는 커밋을 보고: 새 커밋이면 아래 헬스체크·자동 롤백을 그대로 탄다(true),
+      # 이전 버전이면 옮겨지지 않은 것(false), 확인을 못 하면 unknown — 코멘트로 사람에게 알린다.
+      - name: Check traffic after failed promote
+        id: moved
+        if: failure() && steps.promote.outcome == 'failure'
+        run: |
+          state=unknown
+          domain=$(node scripts/release.mjs production-domain || true)
+          for attempt in 1 2 3; do
+            [ -n "$domain" ] || break
+            code=$(curl -sS --max-time 15 -o health.json -w '%{http_code}' "https://$domain/api/health" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              commit=$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync("health.json","utf8")).commit??""))}catch{}')
+              if [ "$commit" = "${GITHUB_SHA:0:7}" ]; then state=true; else state=false; fi
+              break
+            fi
+            sleep 10
+          done
+          echo "moved=$state" >> "$GITHUB_OUTPUT"
+          echo "승격 실패 후 프로덕션 상태: moved=$state"
+          if [ "$state" = true ]; then echo "::warning::승격 단계는 실패했지만 프로덕션이 새 커밋을 내보냅니다 — 헬스체크·롤백을 진행합니다."; fi
+
       # 프로덕션 도메인이 새 커밋을 내보내는지까지 확인한다.
       - name: Health check (production)
         id: health
-        if: steps.promote.outcome == 'success'
+        if: ${{ !cancelled() && (steps.promote.outcome == 'success' || steps.moved.outputs.moved == 'true') }}
         run: |
           domain=$(node scripts/release.mjs production-domain || true)
           if [ -z "$domain" ]; then
@@ -222,7 +245,8 @@ jobs:
 
       - name: Roll back to previous deployment
         id: rollback
-        if: failure() && steps.promote.outcome == 'success' && steps.current.outputs.url != ''
+        # 승격 단계가 실패했어도 트래픽이 옮겨졌고(moved) 헬스체크가 통과했으면 되돌리지 않는다.
+        if: failure() && (steps.promote.outcome == 'success' || steps.moved.outputs.moved == 'true') && steps.health.outcome != 'success' && steps.current.outputs.url != ''
         env:
           PREVIOUS: ${{ steps.current.outputs.url }}
         run: |
@@ -237,6 +261,7 @@ jobs:
           DOMAIN: ${{ steps.health.outputs.domain }}
           SMOKE: ${{ steps.smoke.outcome }}
           PROMOTE: ${{ steps.promote.outcome }}
+          MOVED: ${{ steps.moved.outputs.moved }}
           HEALTH: ${{ steps.health.outcome }}
           ROLLBACK: ${{ steps.rollback.outcome }}
           PREVIOUS: ${{ steps.current.outputs.url }}
@@ -250,10 +275,13 @@ jobs:
           fi
           if [ "$HEALTH" = "success" ]; then
             msg="🚀 프로덕션 배포 완료: ${DOMAIN:-$URL} (헬스체크 OK)$db"
+            if [ "$PROMOTE" = "failure" ]; then msg+=" — 승격 단계는 오류로 끝났지만 프로덕션 반영과 헬스체크를 확인했습니다. [로그]($RUN_URL)"; fi
           elif [ "$ROLLBACK" = "success" ]; then
             msg="↩️ 헬스체크 실패로 **자동 롤백**했습니다 → $PREVIOUS$db. DB 는 그대로입니다 — docs/runbook.md 의 '배포 실패' 를 보세요. [로그]($RUN_URL)"
-          elif [ "$PROMOTE" = "success" ]; then
+          elif [ "$PROMOTE" = "success" ] || [ "$MOVED" = "true" ]; then
             msg="🔥 배포 후 헬스체크 실패, 자동 롤백도 못 했습니다(이전 배포 기록 없음 또는 롤백 실패)$db. **docs/runbook.md 를 따라 바로 확인하세요.** [로그]($RUN_URL)"
+          elif [ "$PROMOTE" = "failure" ] && [ "$MOVED" = "unknown" ]; then
+            msg="⚠️ 승격 단계가 실패했고 트래픽이 옮겨졌는지 확인하지 못했습니다$db. **Vercel → Deployments 에서 현재 Production 이 어느 배포인지 확인하세요**(docs/runbook.md). [로그]($RUN_URL)"
           elif [ "$SMOKE" = "failure" ]; then
             msg="⛔ 스테이징 스모크 테스트 실패 — 트래픽은 옮기지 않았습니다(프로덕션은 이전 버전)$db. [로그]($RUN_URL)"
           else
