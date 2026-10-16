@@ -84,8 +84,7 @@ export async function moveProduction(kind, urlOrId, { timeoutMs = 300_000, inter
     throw new Error(`배포 ${deployment.url} 는 프로덕션 빌드가 아니라 승격할 수 없습니다(vercel deploy --prod 로 만든 것만).`);
   }
   const requestedAfter = Date.now() - 60_000; // 시계 차이 여유
-  const path = kind === 'promote' ? 'promote' : 'rollback';
-  await vercel(`/${kind === 'promote' ? 'v10' : 'v9'}/projects/${encodeURIComponent(project)}/${path}/${deployment.id}`, { method: 'POST' });
+  await vercel(`/${kind === 'promote' ? 'v10' : 'v9'}/projects/${encodeURIComponent(project)}/${kind}/${deployment.id}`, { method: 'POST' });
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     const state = aliasJobState(await vercel(`/v9/projects/${encodeURIComponent(project)}`), deployment.id, requestedAfter);
