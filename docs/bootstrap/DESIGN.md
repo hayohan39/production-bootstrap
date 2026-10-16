@@ -127,8 +127,9 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 - 러너는 `lock_timeout` 5s / `statement_timeout` 5min. 잠금 대기열에서 기다리는 ALTER 가 그 테이블의 모든
   요청을 뒤에 세우는 고전적 장애를 막는다. `CREATE INDEX CONCURRENTLY` 는 `-- migrate:no-transaction` 파일로.
 - 앱은 `vercel deploy --prod --skip-domain` 으로 **프로덕션 설정으로 빌드하되 트래픽은 옮기지 않고**,
-  그 URL 에 스모크 테스트(배포 보호 우회 시크릿 사용, `/api/health` 의 커밋까지 확인) → `vercel promote`
-  → 프로덕션 도메인 헬스체크 → 실패하면 직전 성공 배포로 `vercel rollback`.
+  그 URL 에 스모크 테스트(배포 보호 우회 시크릿 사용, `/api/health` 의 커밋까지 확인) → 승격(Vercel REST API, `scripts/release.mjs promote`)
+  → 프로덕션 도메인 헬스체크 → 실패하면 직전 성공 배포로 롤백(`release.mjs rollback`).
+  `vercel promote/rollback` CLI 는 토큰의 사용자 조회부터 해서 토큰에 따라(팀 범위 등) `User not found` 로 실패하므로 쓰지 않는다(happy-holiday 첫 배포에서 발생).
 - 롤백 대상은 GitHub 의 production 환경 배포 기록에서 "성공으로 끝난 것" 을 고른다. 스모크에서 떨어진
   스테이징 배포는 성공 기록이 없으므로 롤백 대상이 되지 않는다.
 - 앱 롤백은 DB 를 되돌리지 않는다 → expand/contract 를 rubric·스캐너·CLAUDE.md 가 함께 강제한다.

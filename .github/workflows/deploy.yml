@@ -204,7 +204,8 @@ jobs:
         if: steps.smoke.outcome == 'success'
         env:
           URL: ${{ steps.deploy.outputs.url }}
-        run: vercel promote "$URL" --yes --timeout 5m --token="$VERCEL_TOKEN"
+        # vercel promote CLI 는 토큰의 "사용자" 조회부터 해서 토큰에 따라(팀 범위 등) User not found 로 실패한다 → REST API (scripts/release.mjs)
+        run: node scripts/release.mjs promote "$URL"
 
       # 프로덕션 도메인이 새 커밋을 내보내는지까지 확인한다.
       - name: Health check (production)
@@ -226,7 +227,7 @@ jobs:
           PREVIOUS: ${{ steps.current.outputs.url }}
         run: |
           echo "::error::헬스체크 실패 → $PREVIOUS 로 롤백합니다."
-          vercel rollback "$PREVIOUS" --timeout 5m --token="$VERCEL_TOKEN"
+          node scripts/release.mjs rollback "$PREVIOUS"
 
       - name: Summary and PR comment
         if: always() && steps.guard.outputs.ready == 'true'
