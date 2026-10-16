@@ -80,13 +80,18 @@ export function deploymentRef(urlOrId) {
  * 'done' | 'pending' | 실패면 Error 를 던진다.
  */
 export function aliasJobState(project, deploymentId, requestedAfter) {
-  // 작업 기록 모양과 상관없이, 프로덕션이 이미 이 배포를 가리키면 끝난 것이다.
-  if (project?.targets?.production?.id === deploymentId) return 'done';
   const job = project?.lastAliasRequest;
   if (!job || job.toDeploymentId !== deploymentId || (job.requestedAt ?? 0) < requestedAfter) return 'pending';
   if (job.jobStatus === 'succeeded') return 'done';
   if (job.jobStatus === 'pending' || job.jobStatus === 'in-progress') return 'pending';
+  // skipped(이미 그 배포가 프로덕션인 경우 등)는 실제 프로덕션 대상을 보고 판단한다.
+  if (job.jobStatus === 'skipped' && isProductionTarget(project, deploymentId)) return 'done';
   throw new Error(`${job.type ?? '전환'} 작업이 ${job.jobStatus ?? '알 수 없는 상태'} 로 끝났습니다.`);
+}
+
+/** 프로젝트의 프로덕션 대상이 이 배포인가. 작업 기록이 예상과 다를 때의 마지막 확인용(전환 도중에 먼저 바뀔 수 있어 단독으로 쓰지 않는다). */
+export function isProductionTarget(project, deploymentId) {
+  return project?.targets?.production?.id === deploymentId;
 }
 
 /**
@@ -111,9 +116,12 @@ export async function moveProduction(kind, urlOrId, { timeoutMs = 300_000, inter
   await vercel(`/${kind === 'promote' ? 'v10' : 'v9'}/projects/${encodeURIComponent(project)}/${kind}/${deployment.id}`, { method: 'POST' });
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const state = aliasJobState(await get(`/v9/projects/${encodeURIComponent(project)}`), deployment.id, requestedAfter);
-    if (state === 'done') return deployment;
-    if (Date.now() >= deadline) throw new Error(`${kind} 가 ${timeoutMs / 1000}초 안에 끝나지 않았습니다(Vercel 대시보드에서 상태 확인).`);
+    const current = await get(`/v9/projects/${encodeURIComponent(project)}`);
+    if (aliasJobState(current, deployment.id, requestedAfter) === 'done') return deployment;
+    if (Date.now() >= deadline) {
+      if (isProductionTarget(current, deployment.id)) return deployment;
+      throw new Error(`${kind} 가 ${timeoutMs / 1000}초 안에 끝나지 않았습니다(Vercel 대시보드에서 상태 확인).`);
+    }
     await sleep(intervalMs);
   }
 }

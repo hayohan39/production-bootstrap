@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { aliasJobState, deploymentRef, moveProduction } from "../scripts/release.mjs";
+import { aliasJobState, deploymentRef, isProductionTarget, moveProduction } from "../scripts/release.mjs";
 
 describe("deploymentRef", () => {
   it("URL 은 호스트만, dpl_ ID 는 그대로", () => {
@@ -21,8 +21,14 @@ describe("aliasJobState", () => {
     expect(aliasJobState({}, "dpl_new", 1000)).toBe("pending");
   });
 
-  it("작업 기록과 상관없이 프로덕션이 이 배포를 가리키면 done", () => {
-    expect(aliasJobState({ targets: { production: { id: "dpl_new" } } }, "dpl_new", 1000)).toBe("done");
+  it("프로덕션 대상만 바뀐 것으로는 끝났다고 보지 않는다(전환 도중일 수 있음)", () => {
+    expect(aliasJobState({ targets: { production: { id: "dpl_new" } } }, "dpl_new", 1000)).toBe("pending");
+    expect(isProductionTarget({ targets: { production: { id: "dpl_new" } } }, "dpl_new")).toBe(true);
+  });
+
+  it("skipped 는 실제 프로덕션 대상이 이 배포일 때만 done", () => {
+    expect(aliasJobState({ ...job({ jobStatus: "skipped" }), targets: { production: { id: "dpl_new" } } }, "dpl_new", 1000)).toBe("done");
+    expect(() => aliasJobState(job({ jobStatus: "skipped" }), "dpl_new", 1000)).toThrow(/skipped/);
   });
 
   it("실패는 바로 알린다", () => {
@@ -88,7 +94,7 @@ describe("moveProduction", () => {
     vi.stubGlobal("fetch", async (url: URL) => {
       if (url.pathname.startsWith("/v13/")) return new Response(JSON.stringify({ id: "dpl_new", url: "a", projectId: "prj_1", target: "production" }));
       if (url.pathname === "/v9/projects/prj_1" && ++projectCalls === 1) return new Response("{}", { status: 503 });
-      return new Response(JSON.stringify({ targets: { production: { id: "dpl_new" } } }));
+      return new Response(JSON.stringify({ lastAliasRequest: { toDeploymentId: "dpl_new", requestedAt: Date.now(), jobStatus: "succeeded" } }));
     });
     await expect(moveProduction("promote", "a", { intervalMs: 1, retryDelayMs: 1 })).resolves.toMatchObject({ id: "dpl_new" });
     expect(projectCalls).toBe(2);
@@ -107,6 +113,19 @@ describe("moveProduction", () => {
     });
     await expect(moveProduction("promote", "a", { intervalMs: 1, retryDelayMs: 1 })).rejects.toThrow(/HTTP 500/);
     expect(posts).toBe(1);
+  });
+
+  it("시간이 다 됐을 때 프로덕션 대상이 이 배포면 성공으로 본다(작업 기록이 비어 있어도)", async () => {
+    vi.stubEnv("VERCEL_TOKEN", "t");
+    vi.stubEnv("VERCEL_PROJECT_ID", "prj_1");
+    vi.stubGlobal("fetch", async (url: URL) =>
+      new Response(
+        JSON.stringify(
+          url.pathname.startsWith("/v13/") ? { id: "dpl_new", url: "a", projectId: "prj_1", target: "production" } : { targets: { production: { id: "dpl_new" } } },
+        ),
+      ),
+    );
+    await expect(moveProduction("promote", "a", { timeoutMs: 5, intervalMs: 1 })).resolves.toMatchObject({ id: "dpl_new" });
   });
 
   it("시간 안에 끝나지 않으면 실패", async () => {

@@ -202,54 +202,52 @@ jobs:
       - name: Promote to production
         id: promote
         if: steps.smoke.outcome == 'success'
+        # 승격 단계가 실패해도(상태 확인 오류·시간 초과) 트래픽은 옮겨졌을 수 있다. 성패는 아래 헬스체크가 정한다 —
+        # 운영 도메인이 새 커밋을 정상으로 내보내면 성공(배포 기록도 성공 → 다음 롤백 대상이 맞게 잡힌다).
+        continue-on-error: true
         env:
           URL: ${{ steps.deploy.outputs.url }}
         # vercel promote CLI 는 토큰의 "사용자" 조회부터 해서 토큰에 따라(팀 범위 등) User not found 로 실패한다 → REST API (scripts/release.mjs)
         run: node scripts/release.mjs promote "$URL"
 
-      # 승격 요청이 받아들여진 뒤 상태 확인에서 실패했으면 트래픽은 이미 옮겨졌을 수 있다.
-      # 프로덕션 도메인이 내보내는 커밋을 보고: 새 커밋이면 아래 헬스체크·자동 롤백을 그대로 탄다(true),
-      # 이전 버전이면 옮겨지지 않은 것(false), 확인을 못 하면 unknown — 코멘트로 사람에게 알린다.
-      - name: Check traffic after failed promote
-        id: moved
-        if: failure() && steps.promote.outcome == 'failure'
-        run: |
-          state=unknown
-          domain=$(node scripts/release.mjs production-domain || true)
-          for attempt in 1 2 3; do
-            [ -n "$domain" ] || break
-            code=$(curl -sS --max-time 15 -o health.json -w '%{http_code}' "https://$domain/api/health" || true)
-            if [ -n "$code" ] && [ "$code" != "000" ]; then
-              commit=$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync("health.json","utf8")).commit??""))}catch{}')
-              if [ "$commit" = "${GITHUB_SHA:0:7}" ]; then state=true; else state=false; fi
-              break
-            fi
-            sleep 10
-          done
-          echo "moved=$state" >> "$GITHUB_OUTPUT"
-          echo "승격 실패 후 프로덕션 상태: moved=$state"
-          if [ "$state" = true ]; then echo "::warning::승격 단계는 실패했지만 프로덕션이 새 커밋을 내보냅니다 — 헬스체크·롤백을 진행합니다."; fi
-
-      # 프로덕션 도메인이 새 커밋을 내보내는지까지 확인한다.
+      # 프로덕션 도메인이 새 커밋을 정상으로 내보내는지까지 확인한다(약 90초 재시도 — 승격이 늦게 끝나는 경우도 기다린다).
       - name: Health check (production)
         id: health
-        if: ${{ !cancelled() && (steps.promote.outcome == 'success' || steps.moved.outputs.moved == 'true') }}
+        if: steps.promote.outcome == 'success' || steps.promote.outcome == 'failure'
         run: |
           domain=$(node scripts/release.mjs production-domain || true)
           if [ -z "$domain" ]; then
             echo "::warning::프로덕션 도메인을 찾지 못해 헬스체크를 건너뜁니다."
+            [ "${{ steps.promote.outcome }}" = success ] || exit 1
             exit 0
           fi
           echo "domain=https://$domain" >> "$GITHUB_OUTPUT"
           node scripts/smoke.mjs "https://$domain" --sha "$GITHUB_SHA" --tries 9
 
+      # 헬스체크 실패: 운영이 새 커밋을 내보내고 있으면(= 새 배포가 문제) 직전 배포로 되돌린다.
+      # 새 커밋이 아니면 트래픽이 옮겨지지 않은 것이라 되돌리지 않는다(지금 운영이 이미 이전 버전).
       - name: Roll back to previous deployment
         id: rollback
-        # 승격 단계가 실패했어도 트래픽이 옮겨졌고(moved) 헬스체크가 통과했으면 되돌리지 않는다.
-        if: failure() && (steps.promote.outcome == 'success' || steps.moved.outputs.moved == 'true') && steps.health.outcome != 'success' && steps.current.outputs.url != ''
+        if: failure() && steps.health.outcome == 'failure' && steps.current.outputs.url != ''
         env:
           PREVIOUS: ${{ steps.current.outputs.url }}
+          DOMAIN: ${{ steps.health.outputs.domain }}
         run: |
+          commit=""
+          if [ -n "$DOMAIN" ]; then
+            curl -sS --max-time 15 -o health.json "$DOMAIN/api/health" || true
+            commit=$(node -e 'try{process.stdout.write(String(JSON.parse(require("fs").readFileSync("health.json","utf8")).commit??""))}catch{}')
+          fi
+          if [ -z "$commit" ]; then
+            echo "unknown=true" >> "$GITHUB_OUTPUT"
+            echo "::error::운영이 어느 커밋을 내보내는지 확인하지 못했습니다 — 자동 롤백하지 않습니다."
+            exit 1
+          fi
+          if [ "$commit" != "${GITHUB_SHA:0:7}" ]; then
+            echo "not_moved=true" >> "$GITHUB_OUTPUT"
+            echo "::error::운영은 이전 커밋($commit)입니다 — 트래픽이 옮겨지지 않아 롤백하지 않습니다."
+            exit 1
+          fi
           echo "::error::헬스체크 실패 → $PREVIOUS 로 롤백합니다."
           node scripts/release.mjs rollback "$PREVIOUS"
 
@@ -261,7 +259,8 @@ jobs:
           DOMAIN: ${{ steps.health.outputs.domain }}
           SMOKE: ${{ steps.smoke.outcome }}
           PROMOTE: ${{ steps.promote.outcome }}
-          MOVED: ${{ steps.moved.outputs.moved }}
+          NOT_MOVED: ${{ steps.rollback.outputs.not_moved }}
+          UNKNOWN: ${{ steps.rollback.outputs.unknown }}
           HEALTH: ${{ steps.health.outcome }}
           ROLLBACK: ${{ steps.rollback.outcome }}
           PREVIOUS: ${{ steps.current.outputs.url }}
@@ -275,13 +274,15 @@ jobs:
           fi
           if [ "$HEALTH" = "success" ]; then
             msg="🚀 프로덕션 배포 완료: ${DOMAIN:-$URL} (헬스체크 OK)$db"
-            if [ "$PROMOTE" = "failure" ]; then msg+=" — 승격 단계는 오류로 끝났지만 프로덕션 반영과 헬스체크를 확인했습니다. [로그]($RUN_URL)"; fi
+            if [ "$PROMOTE" = "failure" ]; then msg+=" — 승격 단계는 오류로 끝났지만 운영 반영과 헬스체크를 확인했습니다. [로그]($RUN_URL)"; fi
           elif [ "$ROLLBACK" = "success" ]; then
             msg="↩️ 헬스체크 실패로 **자동 롤백**했습니다 → $PREVIOUS$db. DB 는 그대로입니다 — docs/runbook.md 의 '배포 실패' 를 보세요. [로그]($RUN_URL)"
-          elif [ "$PROMOTE" = "success" ] || [ "$MOVED" = "true" ]; then
+          elif [ "$NOT_MOVED" = "true" ]; then
+            msg="❌ 운영이 새 버전으로 바뀌지 않았습니다 — 운영은 이전 버전입니다(확인함)$db. 단 Vercel 의 승격 작업이 늦게 끝날 수 있으니 **Vercel → Deployments 에서 현재 Production 을 확인하세요**(docs/runbook.md). [로그]($RUN_URL)"
+          elif [ "$UNKNOWN" = "true" ]; then
+            msg="⚠️ 헬스체크 실패, 운영이 어느 버전인지 확인하지 못해 자동 롤백하지 않았습니다$db. **Vercel → Deployments 에서 현재 Production 을 확인하세요**(docs/runbook.md). [로그]($RUN_URL)"
+          elif [ "$PROMOTE" = "success" ] || [ "$PROMOTE" = "failure" ]; then
             msg="🔥 배포 후 헬스체크 실패, 자동 롤백도 못 했습니다(이전 배포 기록 없음 또는 롤백 실패)$db. **docs/runbook.md 를 따라 바로 확인하세요.** [로그]($RUN_URL)"
-          elif [ "$PROMOTE" = "failure" ] && [ "$MOVED" = "unknown" ]; then
-            msg="⚠️ 승격 단계가 실패했고 트래픽이 옮겨졌는지 확인하지 못했습니다$db. **Vercel → Deployments 에서 현재 Production 이 어느 배포인지 확인하세요**(docs/runbook.md). [로그]($RUN_URL)"
           elif [ "$SMOKE" = "failure" ]; then
             msg="⛔ 스테이징 스모크 테스트 실패 — 트래픽은 옮기지 않았습니다(프로덕션은 이전 버전)$db. [로그]($RUN_URL)"
           else
