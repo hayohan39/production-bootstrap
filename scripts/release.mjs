@@ -95,8 +95,8 @@ export function aliasJobState(project, deploymentId, requestedAfter) {
  * @param {string} urlOrId
  * @param {{ timeoutMs?: number, intervalMs?: number, retryDelayMs?: number }} [options]
  */
-export async function moveProduction(kind, urlOrId, { timeoutMs = 300_000, intervalMs = 5_000, retryDelayMs = undefined } = {}) {
-  const get = (apiPath) => vercel(apiPath, retryDelayMs === undefined ? {} : { retryDelayMs });
+export async function moveProduction(kind, urlOrId, { timeoutMs = 300_000, intervalMs = 5_000, retryDelayMs } = {}) {
+  const get = (apiPath) => vercel(apiPath, { retryDelayMs });
   const deployment = await get(`/v13/deployments/${encodeURIComponent(deploymentRef(urlOrId))}`);
   const project = projectId();
   // VERCEL_PROJECT_ID 가 이름일 수도 있어서 ID(prj_)일 때만 비교한다.
