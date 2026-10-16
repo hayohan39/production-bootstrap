@@ -134,6 +134,9 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
   스테이징 배포는 성공 기록이 없으므로 롤백 대상이 되지 않는다.
 - 앱 롤백은 DB 를 되돌리지 않는다 → expand/contract 를 rubric·스캐너·CLAUDE.md 가 함께 강제한다.
 - Vercel 함수 리전을 DB 리전에 맞춘다(`vercel.json` `regions`). 기본값(미국 동부)이면 싱가포르 DB 까지 쿼리마다 왕복한다.
+- Vercel 빌드도 `npm ci` 로 설치한다(`vercel.json` `installCommand`). 기본값 `npm install` 은 lockfile 을 다시 풀어서, CI(`npm ci`)는
+  통과했는데 운영 빌드만 peer 의존성 충돌(ERESOLVE)로 실패할 수 있다(happy-holiday: vitest 5 ↔ `@types/node` 20).
+  Dependabot PR 은 시크릿이 없어 프리뷰 빌드가 돌지 않으므로, 이 일치가 merge 전 유일한 확인이다.
 
 ## 10. 관측과 개인정보
 
