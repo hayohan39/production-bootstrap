@@ -59,6 +59,7 @@ Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 
 
 **Claude 커밋 뒤 품질 리뷰가 "결과를 남기지 못했습니다" / PR 리뷰가 "AI 리뷰 없음"** — 로그에 `Workflow initiated by non-human actor`.
 `claude[bot]` 이 시작한 실행이다. ci.yml(refine·autofix)·pr-review.yml 의 `allowed_bots: claude` 를 확인한다([DESIGN.md 4번](DESIGN.md#4-auto-fix)).
+`BOT_PAT` 을 쓰면 실행 주체가 사람 계정이라 이 증상은 생기지 않는다.
 
 **`Migrations are append-only` 실패** — main 에 있는 `.sql` 을 고쳤다. 되돌리고 새 마이그레이션으로.
 
