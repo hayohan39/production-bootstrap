@@ -103,3 +103,4 @@ docs/
 - [STACK.md](docs/bootstrap/STACK.md) — 스택 추천과 scale-up 경로
 - [DESIGN.md](docs/bootstrap/DESIGN.md) — 설계 근거 (Risk 두 겹 평가, 자기 채점 방지, 배포 순서)
 - [SETUP.md](docs/bootstrap/SETUP.md) · [MAINTAINING.md](docs/bootstrap/MAINTAINING.md) · [TROUBLESHOOTING.md](docs/bootstrap/TROUBLESHOOTING.md)
+- [FROM-PROJECT.md](docs/bootstrap/FROM-PROJECT.md) — project-bootstrap 으로 만든 프로젝트를 이 운영 흐름으로 전환하기
