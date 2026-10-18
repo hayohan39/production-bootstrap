@@ -79,6 +79,8 @@ project-bootstrap(개인용)의 Vercel Hobby + Neon Free 조합을 실제 운영
 
 ## 개인용(project-bootstrap)과 비교
 
+이미 project-bootstrap 으로 만든 프로젝트를 옮기는 절차는 [FROM-PROJECT.md](FROM-PROJECT.md).
+
 | | project-bootstrap | production-bootstrap |
 | --- | --- | --- |
 | 대상 | 개인 앱, 실험 | 실제 사용자가 있는 서비스(베타~) |
