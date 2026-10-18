@@ -57,6 +57,10 @@ Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 
 
 **auto-fix 가 push 했는데 CI 가 다시 안 돎** — `GITHUB_TOKEN` push 는 워크플로를 트리거하지 않는다. Claude App 또는 `BOT_PAT`.
 
+**Claude 커밋 뒤 품질 리뷰가 "결과를 남기지 못했습니다" / PR 리뷰가 "AI 리뷰 없음"** — 로그에 `Workflow initiated by non-human actor`.
+`claude[bot]` 이 시작한 실행이다. ci.yml(refine·autofix)·pr-review.yml 의 `allowed_bots: claude` 를 확인한다([DESIGN.md 4번](DESIGN.md#4-auto-fix)).
+`BOT_PAT` 을 쓰면 실행 주체가 사람 계정이라 이 증상은 생기지 않는다.
+
 **`Migrations are append-only` 실패** — main 에 있는 `.sql` 을 고쳤다. 되돌리고 새 마이그레이션으로.
 
 **preview 마이그레이션 실패** — 프로덕션 데이터에서 안 되는 마이그레이션이다(예: 기존 행이 있는데 DEFAULT 없는 NOT NULL).
