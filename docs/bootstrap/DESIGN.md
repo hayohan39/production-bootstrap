@@ -40,6 +40,10 @@ Claude 클라우드 세션(웹·모바일)의 GitHub 접근은 전용 프록시�
 ## 4. auto-fix
 
 - `GITHUB_TOKEN` 으로 push 한 커밋은 워크플로를 트리거하지 않는다. Claude GitHub App 토큰 또는 `BOT_PAT` 이 필요하다.
+- 그래서 App 토큰으로 push 한 커밋의 CI·PR 리뷰는 `claude[bot]` 이 시작한 실행이 된다. claude-code-action 은 bot 이 시작한 실행을
+  기본으로 거부하므로(`Workflow initiated by non-human actor`) refine·auto-fix(`ci.yml`)와 PR 리뷰(`pr-review.yml`)에
+  `allowed_bots: claude` 를 둔다. 빠지면 Claude 커밋 뒤 품질 리뷰가 "결과를 남기지 못했습니다", PR 리뷰가 "AI 리뷰 없음" 이 된다.
+  `@claude`(`claude-mention.yml`)는 사람의 코멘트로만 시작하므로 두지 않는다.
 - 무한 루프 방지: PR 브랜치의 `[claude-autofix]` 커밋 수(기본 3).
 - **운영용 추가 제한**: 도구를 허용 목록으로 좁혔다(`npm`·`node`·`git`·`gh pr comment`, 파일 편집).
   `.github/` 와 `scripts/risk/` 는 편집 금지, 라벨·PR 상태를 바꾸는 명령은 쓸 수 없다.
