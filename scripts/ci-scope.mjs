@@ -24,7 +24,8 @@ const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPat
 if (isMain) {
   let docsOnly = false;
   try {
-    const out = execFileSync('git', ['diff', '--name-only', `${process.env.BASE}...HEAD`], { encoding: 'utf8' });
+    // --no-renames: 이름 변경을 삭제+추가로 보여 옛 경로도 목록에 남는다(코드를 docs/ 로 옮긴 PR 을 문서로 보지 않게).
+    const out = execFileSync('git', ['diff', '--name-only', '--no-renames', `${process.env.BASE}...HEAD`], { encoding: 'utf8' });
     docsOnly = isDocsOnly(out.split('\n'));
   } catch (error) {
     console.log(`::warning::바뀐 파일 목록을 얻지 못해 전체 CI 를 돈다: ${error.message}`);
