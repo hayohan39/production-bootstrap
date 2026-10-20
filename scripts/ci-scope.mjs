@@ -10,14 +10,14 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-// .md 라도 앱·파이프라인에 영향이 있는 곳(리뷰 프롬프트·rubric, 정적 파일, 소스, 마이그레이션)은 문서로 보지 않는다.
-const NOT_DOCS = /^(\.github|src|public|migrations)\//;
-const DOCS = /^docs\/|\.md$|^LICENSE$/i;
+// 문서로 보는 곳만 나열한다: docs/, .claude/(세션 지침), 루트의 *.md, LICENSE.
+// 그 밖의 .md(리뷰 프롬프트·rubric, 빌드 때 읽는 콘텐츠 등)는 앱·파이프라인에 영향이 있을 수 있어 문서로 보지 않는다.
+const DOCS = /^(docs|\.claude)\/|^[^/]+\.md$|^LICENSE$/i;
 
 /** 바뀐 파일이 모두 문서인가 */
 export function isDocsOnly(files) {
   const list = files.map((f) => f.trim()).filter(Boolean);
-  return list.length > 0 && list.every((f) => DOCS.test(f) && !NOT_DOCS.test(f));
+  return list.length > 0 && list.every((f) => DOCS.test(f));
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);

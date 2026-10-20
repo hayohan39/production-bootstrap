@@ -15,7 +15,8 @@ describe("ci scope", () => {
     expect(isDocsOnly(["docs/runbook.md", "package.json"])).toBe(false);
   });
 
-  it("파이프라인·앱에 영향이 있는 .md 는 문서로 보지 않는다", () => {
+  it("docs/·.claude/·루트 밖의 .md 는 문서로 보지 않는다", () => {
+    expect(isDocsOnly(["content/posts/hello.md"])).toBe(false);
     expect(isDocsOnly([".github/review/quality.md"])).toBe(false);
     expect(isDocsOnly(["public/notice.md"])).toBe(false);
     expect(isDocsOnly(["src/content/about.md"])).toBe(false);
