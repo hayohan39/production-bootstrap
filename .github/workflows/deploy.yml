@@ -36,8 +36,9 @@ jobs:
     # 템플릿 리포지토리 자신은 배포하지 않는다.
     if: ${{ !github.event.repository.is_template }}
     runs-on: ubuntu-latest
-    # 마이그레이션 도중 끊기면 더 아프다 — 넉넉히 둔다(러너가 문장마다 statement_timeout 5분을 건다).
-    timeout-minutes: 30
+    # 마이그레이션 도중 끊기면 더 아프다(CREATE INDEX CONCURRENTLY 가 끊기면 INVALID 인덱스가 남는다). 러너가 문장마다
+    # statement_timeout(기본 5분, MIGRATION_STATEMENT_TIMEOUT)을 걸어 보통은 그쪽이 먼저 끊고 안내를 남긴다. 이 상한은 멈춤 대비용이다.
+    timeout-minutes: 90
     environment: production
     outputs:
       snapshot: ${{ steps.snapshot.outputs.snapshot_name }}

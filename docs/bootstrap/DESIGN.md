@@ -87,7 +87,8 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 - **문서만 바뀐 PR**(`scripts/ci-scope.mjs`): `test` job 은 돌되 설치·빌드·테스트를 건너뛰고, preview·refine 도 건너뛴다.
   `paths-ignore` 를 쓰지 않는 이유: 필수 체크(`test`)가 아예 안 생겨 merge 가 막힌다. 판정이 불확실하면 전체를 돈다.
   템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. PR 리뷰(Risk)는 문서 PR 에도 돈다(게이트).
-- **draft PR 은 프리뷰를 건너뛴다.** ready for review 로 바꾸면 CI 가 다시 돈다.
+- draft PR 은 프리뷰를 **건너뛰지 않는다**: risk-gate 가 ready_for_review 에 다시 '대기' 가 되지 않아, draft 때 통과한 게이트로
+  프로덕션 복제 DB 검증 전에 merge 될 수 있다(project-bootstrap 은 게이트가 없어 건너뛴다).
 - **품질 리뷰는 PR 당 한 번**(4-1). auto-fix 는 PR 당 3회(`AUTOFIX_MAX_ATTEMPTS`).
 - Next.js 빌드 캐시(`.next/cache`)를 `actions/cache` 로 남긴다. main push 의 CI 가 PR 들의 출발점 캐시를 만든다.
 

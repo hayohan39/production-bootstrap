@@ -124,7 +124,8 @@ jobs:
   # PR 프리뷰: 프로덕션 DB 를 복제한 Neon 브랜치에 이 PR 의 마이그레이션을 적용하고
   # 그 DB 에 붙은 Vercel 프리뷰를 띄운다. merge 후 프로덕션에서 일어날 일을 미리
   # 해보는 단계다. 필요한 값이 없으면(템플릿 리포지토리, 프로비저닝 전) 건너뛴다.
-  # draft PR 과 문서만 바뀐 PR 도 건너뛴다(ready for review 로 바꾸면 CI 가 다시 돌며 프리뷰를 띄운다).
+  # 문서만 바뀐 PR 도 건너뛴다(마이그레이션이 없으니 복제 DB 검증이 필요 없다). draft PR 은 건너뛰지 않는다:
+  # risk-gate 는 ready_for_review 에 다시 '대기' 가 되지 않아, draft 때 통과한 게이트로 프리뷰 검증 전에 merge 될 수 있다.
   # ---------------------------------------------------------------------------
   preview:
     name: preview
@@ -133,7 +134,6 @@ jobs:
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && !github.event.repository.is_template
-      && github.event.pull_request.draft == false
       && needs.test.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     # Neon·Vercel 이 응답하지 않을 때 러너가 기다리며 시간을 쓰지 않게. 평소 3~5분이다.

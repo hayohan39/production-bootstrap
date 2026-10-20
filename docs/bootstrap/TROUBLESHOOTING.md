@@ -49,7 +49,7 @@ Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 
 `CLAUDE_REFINE=false`, 문서만 바뀐 PR, 이 PR 에서 이미 한 번 돌았거나(PR 당 1회 — 다시 돌리려면 🧹 코멘트를 지우고 push),
 HEAD 가 이미 `[claude-refine]` 커밋이다.
 
-**프리뷰가 안 뜸** — draft PR 이거나 문서만 바뀐 PR 이다(설계상 건너뜀). ready for review 로 바꾸면 다시 돈다.
+**프리뷰가 안 뜸** — 문서만 바뀐 PR 이다(설계상 건너뜀 — 마이그레이션이 없어 복제 DB 검증이 필요 없다).
 🧹 코멘트에 "`ci.yml` 을 바꿔서 건너뜁니다" 가 있으면 그 PR 이 `ci.yml` 을 고쳤다 — merge 후 다음 PR 부터 돈다.
 
 **`[claude-refine]` 커밋 뒤 세션에서 push 가 거절됨** — CI 가 브랜치에 커밋을 더했다. `git pull origin <브랜치>` 후 다시 push.
