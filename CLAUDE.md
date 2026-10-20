@@ -84,7 +84,7 @@ DB 복구(스냅샷/PITR)는 데이터에 영향이 크므로 절차를 설명�
 PR 생성/push ─► ci.yml
                  ├ test     마이그레이션 append-only 확인 · lint · typecheck · test · 빈 Postgres 마이그레이션 · build
                  ├ preview  Neon 브랜치(프로덕션 복제)에 마이그레이션 → Vercel 프리뷰 → 스모크 테스트
-                 ├ refine   위가 통과하면 Claude 품질 리뷰 → 작은 정리는 [claude-refine] 커밋, 큰 것은 제안 (push 당 1회)
+                 ├ refine   위가 통과하면 Claude 품질 리뷰 → 작은 정리는 [claude-refine] 커밋, 큰 것은 제안 (PR 당 1회)
                  └ autofix  위가 실패하면 Claude 가 고쳐서 [claude-autofix] 커밋 (PR 당 최대 3회)
              ─► risk-gate.yml (pull_request_target)  새 커밋이면 risk-gate 를 "대기" 로
 CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)

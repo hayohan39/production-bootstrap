@@ -13,7 +13,7 @@
           ▼
    CI ─ test (append-only 마이그레이션 · lint · typecheck · test · 빈 DB 마이그레이션 · build)
       ─ preview (프로덕션 복제 DB 에 마이그레이션 → Vercel 프리뷰 → 스모크)
-      ├ 통과 → Claude 품질 리뷰: 작은 정리는 직접 커밋, 큰 리팩터링은 제안 (push 당 1회)
+      ├ 통과 → Claude 품질 리뷰: 작은 정리는 직접 커밋, 큰 리팩터링은 제안 (PR 당 1회)
       └ 실패 → Claude auto-fix (PR 당 최대 3회)
           │
           ▼
