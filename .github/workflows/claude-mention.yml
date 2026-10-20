@@ -15,10 +15,6 @@ on:
   issues:
     types: [opened, assigned, labeled]
 
-concurrency:
-  group: claude-mention-${{ github.event.issue.number || github.event.pull_request.number }}
-  cancel-in-progress: false
-
 jobs:
   claude:
     if: >-
@@ -27,6 +23,13 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || github.event.label.name == 'claude'))
     runs-on: ubuntu-latest
+    # 사람이 시킨 작업이라 refine·auto-fix 보다 넉넉히 둔다(--max-turns 60).
+    timeout-minutes: 45
+    # job 단위로 둔다: workflow 단위면 @claude 가 없는 코멘트(봇 코멘트 포함)의 실행도 같은 그룹에 들어가
+    # 대기 중이던 @claude 실행을 밀어내고 취소시킨다. 건너뛴 job 은 그룹에 들어가지 않는다.
+    concurrency:
+      group: claude-mention-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write

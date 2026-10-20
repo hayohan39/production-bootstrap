@@ -47,6 +47,7 @@ jobs:
   create:
     if: github.event.repository.is_template
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       GH_TOKEN: ${{ secrets.BOOTSTRAP_PAT }}
       NAME: ${{ inputs.name }}

@@ -55,6 +55,9 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 
 - **동작이 바뀌지 않는 국소적 정리만** 자동 반영한다(`npm run check` 통과 필수, 실패하면 되돌리고 제안으로).
   여러 파일·공개 인터페이스·테스트 추가는 제안 코멘트로만 남기고 사람이 `@claude` 로 지시한다.
+- PR 당 한 번: 🧹 코멘트에 완료 표시(`<!-- quality-review:done -->`)가 있으면 건너뛴다. 품질 리뷰는 push 마다 CI 를 한 번 더
+  돌게 하므로(정리 커밋 → CI 재실행) Actions 사용 시간이 두 배가 된다. 작성자 push 마다 돌리려면 `REFINE_EVERY_PUSH=true`,
+  한 PR 만 다시 돌리려면 그 🧹 코멘트를 지운다.
 - 반복 방지: HEAD 가 이미 `[claude-refine]` 커밋이면 건너뛴다(`REFINE_MAX_ROUNDS`, 기본 1).
 - `migrations/`, `.github/`, `scripts/risk/` 는 네 겹으로 막는다: 프롬프트, 편집 도구(Edit·Write) 차단, pre-push 훅,
   사후 검사(`[claude-refine]` 커밋이 건드렸으면 🧹 코멘트에 경고. 그 push 가 실행을 취소하므로
@@ -74,6 +77,20 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 ## 5. CI 는 ubuntu 만
 
 로컬 Windows 에서도 돌아가도록 `.gitattributes`(LF 고정), npm scripts 의 POSIX 문법 금지, `path.join` 규칙은 유지한다.
+
+### Actions 사용 시간 가드레일
+
+새 프로젝트는 기본이 private 이라 계정의 월 Actions 한도를 함께 쓴다. 필요할 때만 돌게:
+
+- **모든 job 에 `timeout-minutes`.** 기본값 360분이면 멈춘 job 하나가 한도를 크게 깎는다. Claude 단계는 step 에도
+  더 짧은 상한을 둬서, 멈춰도 뒤의 리포트·검사 step 은 돈다.
+- **문서만 바뀐 PR**(`scripts/ci-scope.mjs`): `test` job 은 돌되 설치·빌드·테스트를 건너뛰고, preview·refine 도 건너뛴다.
+  `paths-ignore` 를 쓰지 않는 이유: 필수 체크(`test`)가 아예 안 생겨 merge 가 막힌다. 판정이 불확실하면 전체를 돈다.
+  템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. PR 리뷰(Risk)는 문서 PR 에도 돈다(게이트).
+- draft PR 은 프리뷰를 **건너뛰지 않는다**: risk-gate 가 ready_for_review 에 다시 '대기' 가 되지 않아, draft 때 통과한 게이트로
+  프로덕션 복제 DB 검증 전에 merge 될 수 있다(project-bootstrap 은 게이트가 없어 건너뛴다).
+- **품질 리뷰는 PR 당 한 번**(4-1). auto-fix 는 PR 당 3회(`AUTOFIX_MAX_ATTEMPTS`).
+- Next.js 빌드 캐시(`.next/cache`)를 `actions/cache` 로 남긴다. main push 의 CI 가 PR 들의 출발점 캐시를 만든다.
 
 ---
 

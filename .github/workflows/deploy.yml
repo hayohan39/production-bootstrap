@@ -36,6 +36,9 @@ jobs:
     # 템플릿 리포지토리 자신은 배포하지 않는다.
     if: ${{ !github.event.repository.is_template }}
     runs-on: ubuntu-latest
+    # 마이그레이션 도중 끊기면 더 아프다(CREATE INDEX CONCURRENTLY 가 끊기면 INVALID 인덱스가 남는다). 러너가 문장마다
+    # statement_timeout(기본 5분, MIGRATION_STATEMENT_TIMEOUT)을 걸어 보통은 그쪽이 먼저 끊고 안내를 남긴다. 이 상한은 멈춤 대비용이다.
+    timeout-minutes: 90
     environment: production
     outputs:
       snapshot: ${{ steps.snapshot.outputs.snapshot_name }}
@@ -119,6 +122,9 @@ jobs:
       && needs.migrate.result != 'failure'
       && needs.migrate.result != 'cancelled'
     runs-on: ubuntu-latest
+    # 아래 단계마다 상한을 따로 둔다: 멈춘 단계가 '실패' 로 끝나야 자동 롤백(if: failure() && health 실패)이 돈다.
+    # job 상한은 그 합(42분)에 준비 단계까지 더해도 넉넉한 마지막 안전망이다(job 이 취소되면 롤백 단계는 돌지 않는다).
+    timeout-minutes: 60
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}
@@ -177,6 +183,7 @@ jobs:
       - name: Deploy (staged)
         id: deploy
         if: steps.guard.outputs.ready == 'true'
+        timeout-minutes: 15
         run: |
           # --yes: 배포 이력이 없는 새 프로젝트의 첫 배포에서 CLI 가 대화형 확인을 물으려다 실패하는 것을 막는다.
           url=$(vercel deploy --prod --skip-domain --yes --token="$VERCEL_TOKEN" \
@@ -188,6 +195,7 @@ jobs:
       - name: Smoke test (staged)
         id: smoke
         if: steps.deploy.outcome == 'success'
+        timeout-minutes: 5
         env:
           URL: ${{ steps.deploy.outputs.url }}
         run: |
@@ -202,6 +210,7 @@ jobs:
       - name: Promote to production
         id: promote
         if: steps.smoke.outcome == 'success'
+        timeout-minutes: 8
         # 승격 단계가 실패해도(상태 확인 오류·시간 초과) 트래픽은 옮겨졌을 수 있다. 성패는 아래 헬스체크가 정한다 —
         # 운영 도메인이 새 커밋을 정상으로 내보내면 성공(배포 기록도 성공 → 다음 롤백 대상이 맞게 잡힌다).
         continue-on-error: true
@@ -214,6 +223,7 @@ jobs:
       - name: Health check (production)
         id: health
         if: steps.promote.outcome == 'success' || steps.promote.outcome == 'failure'
+        timeout-minutes: 6
         run: |
           domain=$(node scripts/release.mjs production-domain || true)
           if [ -z "$domain" ]; then
@@ -229,6 +239,7 @@ jobs:
       - name: Roll back to previous deployment
         id: rollback
         if: failure() && steps.health.outcome == 'failure' && steps.current.outputs.url != ''
+        timeout-minutes: 8
         env:
           PREVIOUS: ${{ steps.current.outputs.url }}
           DOMAIN: ${{ steps.health.outputs.domain }}
