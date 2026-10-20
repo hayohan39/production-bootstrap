@@ -36,6 +36,8 @@ jobs:
     # 템플릿 리포지토리 자신은 배포하지 않는다.
     if: ${{ !github.event.repository.is_template }}
     runs-on: ubuntu-latest
+    # 마이그레이션 도중 끊기면 더 아프다 — 넉넉히 둔다(러너가 문장마다 statement_timeout 5분을 건다).
+    timeout-minutes: 30
     environment: production
     outputs:
       snapshot: ${{ steps.snapshot.outputs.snapshot_name }}
@@ -119,6 +121,7 @@ jobs:
       && needs.migrate.result != 'failure'
       && needs.migrate.result != 'cancelled'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     environment:
       name: production
       url: ${{ steps.deploy.outputs.url }}
