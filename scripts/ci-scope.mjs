@@ -10,9 +10,9 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-// 문서로 보는 곳만 나열한다: docs/, .claude/(세션 지침), 루트의 *.md, LICENSE.
+// 문서로 보는 곳만 나열한다: docs/, .claude/ 의 *.md(세션 지침 — settings.json·훅은 아니다), 루트의 *.md, LICENSE.
 // 그 밖의 .md(리뷰 프롬프트·rubric, 빌드 때 읽는 콘텐츠 등)는 앱·파이프라인에 영향이 있을 수 있어 문서로 보지 않는다.
-const DOCS = /^(docs|\.claude)\/|^[^/]+\.md$|^LICENSE$/i;
+const DOCS = /^docs\/|^\.claude\/.*\.md$|^[^/]+\.md$|^LICENSE$/i;
 
 /** 바뀐 파일이 모두 문서인가 */
 export function isDocsOnly(files) {

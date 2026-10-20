@@ -13,6 +13,8 @@ describe("ci scope", () => {
   it("코드·설정이 하나라도 섞이면 false", () => {
     expect(isDocsOnly(["README.md", "src/app/page.tsx"])).toBe(false);
     expect(isDocsOnly(["docs/runbook.md", "package.json"])).toBe(false);
+    expect(isDocsOnly([".claude/settings.json"])).toBe(false);
+    expect(isDocsOnly([".claude/hooks/start.mjs"])).toBe(false);
   });
 
   it("docs/·.claude/·루트 밖의 .md 는 문서로 보지 않는다", () => {
