@@ -15,7 +15,7 @@ Claude 세션에서 "장애 났어" 라고 하면 Claude 도 이 문서를 따�
 - [ ] **Neon**: 플랜(Launch 이상)과 PITR 보존 기간을 확인한다. 이 기간이 "몇 시간/며칠 전으로 되돌릴 수 있나" 다.
 - [ ] **Vercel**: Deployment Protection 은 켠 채로 둔다(프리뷰는 프로덕션 데이터 복제본을 쓴다).
   Spend Management 로 월 한도를 건다. 로그인·쓰기 API 가 생기면 Firewall 레이트 리밋 규칙을 건다.
-- [ ] **GitHub**: Settings → Rules 에 `main protection`(PR 필수, 필수 체크 `test` · `risk-gate`)이 있는지.
+- [ ] **GitHub**: Settings → Rules 에 `main protection`(PR 필수, 필수 체크 `test`)이 있는지.
   없으면 템플릿의 `docs/bootstrap/SETUP.md` "브랜치 보호" 를 따른다.
 
 ## 장애 대응

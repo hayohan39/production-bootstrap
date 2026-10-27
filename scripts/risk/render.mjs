@@ -1,4 +1,4 @@
-// PR 종합 코멘트(CI · 리뷰 · Risk Score · merge 게이트)를 만든다. 사용자는 휴대폰으로 읽는다:
+// PR 종합 코멘트(CI · 리뷰 · Risk Score · merge 전 확인 사항)를 만든다. 사용자는 휴대폰으로 읽는다:
 // 첫 두 줄에서 결론이 보이고, 상세는 아래로 내려간다.
 import { kst } from '../preview-comment.mjs';
 import { FACTORS, FACTOR_LABELS, LEVEL_LABELS } from './levels.mjs';
@@ -52,8 +52,8 @@ function verdictText(assessment) {
   return assessment.review.verdict === 'approve' ? '✅ 리뷰 통과' : '✋ 리뷰: 수정 필요';
 }
 
-function recommendation(level, gate) {
-  if (gate.state === 'failure') return '**merge 전에 아래 "merge 조건" 을 채워야 합니다.**';
+function recommendation(level, checks) {
+  if (checks.state === 'failure') return '**merge 전에 아래 "merge 전 확인" 의 빠진 항목을 확인하세요.**';
   switch (level) {
     case 'LOW':
       return '변경이 제한적입니다. 요약만 확인하고 merge 해도 됩니다.';
@@ -71,21 +71,21 @@ function recommendation(level, gate) {
 /**
  * @param {object} p
  * @param {object} p.assessment  finalize() 결과
- * @param {object} p.gate        applyPolicy() 결과
+ * @param {object} p.checks      applyPolicy() 결과
  * @param {object} p.ci          { test, preview, autofix, previewUrl, migrate, smoke, runUrl }
  * @param {object|null} [p.previous]  직전 평가의 { sha, total, level }
- * @param {object|null} [p.acceptance]
  * @param {string} [p.repoUrl]  https://github.com/owner/repo (기준 문서 링크용)
  */
-export function renderSummary({ assessment, gate, ci, previous = null, acceptance = null, repoUrl = '' }) {
+export function renderSummary({ assessment, checks, ci, previous = null, repoUrl = '' }) {
   const a = assessment;
   const L = [];
   L.push(SUMMARY_MARKER);
-  L.push(`## ${LEVEL_LABELS[gate.level]} · Risk ${a.total}/100 · ${verdictText(a)} · CI ${ciIcon(ci.test)}`);
+  L.push(`## ${LEVEL_LABELS[checks.level]} · Risk ${a.total}/100 · ${verdictText(a)} · CI ${ciIcon(ci.test)}`);
   const delta = previous && previous.sha !== a.sha ? ` (이전 커밋 ${previous.total} → ${a.total})` : '';
-  L.push(`\`${a.sha.slice(0, 7)}\` 기준${delta} · merge 게이트 **${gate.state === 'success' ? '통과 ✅' : '막힘 ⛔'}**`);
+  const unmet = checks.requirements.filter((r) => !r.met).length;
+  L.push(`\`${a.sha.slice(0, 7)}\` 기준${delta} · merge 전 확인 **${unmet ? `${unmet}개 빠짐 ⚠️` : '모두 채움 ✅'}**`);
   L.push('');
-  L.push(recommendation(gate.level, gate));
+  L.push(recommendation(checks.level, checks));
   if (a.review?.summary) {
     L.push('');
     L.push(a.review.summary.trim());
@@ -100,13 +100,12 @@ export function renderSummary({ assessment, gate, ci, previous = null, acceptanc
   if (ci.autofix && ci.autofix !== 'skipped' && ci.autofix !== 'missing') L.push(`| auto-fix | ${ciIcon(ci.autofix)} |`);
   L.push(`| AI 리뷰 | ${a.review ? verdictText(a) : '건너뜀 (CI 실패·비활성·장애) — 규칙 기반 점수만'} |`);
 
-  // --- merge 조건
-  if (gate.requirements.length || gate.reasons.length) {
+  // --- merge 전 확인 (막지 않는다 — merge 는 사람이 판단한다)
+  if (checks.requirements.length || checks.reasons.length) {
     L.push('');
-    L.push('### merge 조건 (risk-gate)');
-    for (const r of gate.reasons) L.push(`- ⚠️ ${r}`);
-    for (const r of gate.requirements) L.push(`- ${r.met ? '✅' : '⬜'} ${r.label}`);
-    if (acceptance) L.push(`- 수락: @${acceptance.by} (\`${acceptance.sha.slice(0, 7)}\`)`);
+    L.push('### merge 전 확인');
+    for (const r of checks.reasons) L.push(`- ⚠️ ${r}`);
+    for (const r of checks.requirements) L.push(`- ${r.met ? '✅' : '⬜'} ${r.label}`);
   }
 
   // --- 리뷰 발견 사항
@@ -180,13 +179,13 @@ export function renderSummary({ assessment, gate, ci, previous = null, acceptanc
       `Risk 는 "품질" 이 아니라 "프로덕션에서 문제가 났을 때의 심각도·범위·검증·복구 가능성" 입니다.` +
       `${ci.runUrl ? ` · [실행 로그](${ci.runUrl})` : ''}</sub>`,
   );
-  L.push(encodeData({ assessment: a, ci, acceptance }));
+  L.push(encodeData({ assessment: a, ci }));
 
   let body = L.join('\n');
   // GitHub 코멘트 한도(65,536자). 넘으면 상세부터 줄인다.
   if (body.length > 60_000) {
     const slim = { ...a, signals: a.signals.map((s) => ({ ...s, where: s.where.slice(0, 3) })) };
-    body = body.replace(/<!-- risk-data:[^>]+-->/, encodeData({ assessment: slim, ci, acceptance }));
+    body = body.replace(/<!-- risk-data:[^>]+-->/, encodeData({ assessment: slim, ci }));
     body = body.replace(/<details>[\s\S]*?<\/details>/, '<details><summary>규칙 기반 신호 (너무 길어 생략)</summary></details>');
   }
   return body;

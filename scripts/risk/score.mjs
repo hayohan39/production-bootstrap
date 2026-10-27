@@ -1,5 +1,5 @@
 // 규칙 기반 스캔(floor·override)과 LLM 리뷰(factor 점수·근거)를 합쳐 최종 Risk Score 를 낸다.
-// 그리고 PR 본문·수락 여부를 보고 merge 게이트(risk-gate 상태)를 정한다.
+// 그리고 PR 본문을 보고 merge 전 확인 사항(롤백 계획·배포 후 확인)이 채워졌는지 본다. merge 를 막지는 않는다.
 //
 // 원칙(.github/risk/rubric.md):
 // - LLM 은 floor 보다 낮게 매길 수 없다. override 도 내릴 수 없다(올리는 것만 된다).
@@ -105,16 +105,15 @@ export function sectionFilled(body, heading) {
 }
 
 // ---------------------------------------------------------------------------
-// 게이트 (risk-gate 커밋 상태)
+// merge 전 확인 사항 (막지 않는다 — PR 종합 코멘트에 보여 주고 판단은 사람이 한다)
 
 /**
  * @param assessment finalize() 결과
  * @param {object} ctx
  * @param {string} ctx.prBody
- * @param {{by:string, sha:string}|null} ctx.acceptance  관리자가 risk-accepted 를 붙인 기록
  * @param {boolean} ctx.ciOk  CI(test·preview) 통과 여부
  */
-export function applyPolicy(assessment, { prBody, acceptance, ciOk }) {
+export function applyPolicy(assessment, { prBody, ciOk }) {
   const reasons = [];
   let level = assessment.level;
   const rollback = sectionFilled(prBody, '롤백 계획');
@@ -130,21 +129,13 @@ export function applyPolicy(assessment, { prBody, acceptance, ciOk }) {
   if (!ciOk) requirements.push({ id: 'ci', label: 'CI(test·preview) 통과', met: false });
   if (rank(level) >= rank('HIGH')) requirements.push({ id: 'rollback', label: 'PR 본문 "롤백 계획"', met: rollback });
   if (rank(level) >= rank('VERY_HIGH')) requirements.push({ id: 'verify', label: 'PR 본문 "배포 후 확인"', met: verify });
-  const needsAcceptance = level === 'CRITICAL' || (!assessment.llmAssessed && rank(level) >= rank('HIGH'));
-  if (needsAcceptance) {
-    requirements.push({
-      id: 'accept',
-      label: '관리자의 `risk-accepted` 라벨 (현재 커밋 기준)',
-      met: Boolean(acceptance && acceptance.sha === assessment.sha),
-    });
-  }
 
   const unmet = requirements.filter((r) => !r.met);
   const state = unmet.length ? 'failure' : 'success';
   const head = `${level.replace('_', ' ')} ${assessment.total}/100`;
   const description = unmet.length
-    ? `${head} — 필요: ${unmet.map((r) => r.label.replace(/`/g, '')).join(', ')}`
-    : `${head} — 통과`;
+    ? `${head} — 빠짐: ${unmet.map((r) => r.label.replace(/`/g, '')).join(', ')}`
+    : `${head} — 확인 사항 채움`;
 
   return {
     level,

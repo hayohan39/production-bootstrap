@@ -1,7 +1,7 @@
 # project-bootstrap 에서 전환하기
 
 [project-bootstrap](https://github.com/hayohan39/project-bootstrap)(개인용)으로 만든 프로젝트를 이 템플릿의 운영 흐름
-(Risk Score · merge 게이트 · 스냅샷 → 스테이징 → 승격 → 자동 롤백 · 관측)으로 옮기는 절차.
+(Risk Score · 스냅샷 → 스테이징 → 승격 → 자동 롤백 · 관측)으로 옮기는 절차.
 
 두 템플릿은 스택이 같다(Next.js + Neon + Vercel, `pg`, 같은 마이그레이션 러너). 그래서 **앱 코드는 거의 그대로**이고
 바뀌는 것은 CI/CD·리뷰·운영 장치다. 실제 사례: happy-holiday 가 PR 하나(약 50개 파일, 대부분 복사)로 전환했고
@@ -26,7 +26,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 | | 전환 전 (project) | 전환 후 (production) |
 | --- | --- | --- |
 | PR 리뷰 | `claude-review.yml` — PR 열 때 1회 | `pr-review.yml` — CI 뒤 push 마다, **Risk Score 0–100** + `risk:*` 라벨 |
-| merge 게이트 | 사람이 누르는 것뿐 | 브랜치 규칙: `test` + `risk-gate` 필수, CRITICAL 은 관리자 `risk-accepted` |
+| merge 게이트 | 사람이 누르는 것뿐 | 같음(필수 체크 `test`). Risk 는 코멘트로만 |
 | 배포 | 마이그레이션 → 프로덕션 배포 → 헬스체크 | **DB 스냅샷** → 마이그레이션(`lock_timeout`) → 도메인 없이 배포 → **스모크** → **승격** → 헬스체크 → 실패 시 **자동 롤백** |
 | 복구 | Vercel 대시보드에서 수동 | `rollback.yml`, 스냅샷 브랜치, PITR, `docs/runbook.md` |
 | 관측 | `/api/health` | + Sentry(DSN 있을 때만), 구조화 로그 `src/lib/log.ts` |
@@ -48,8 +48,8 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
       사용량이 늘어난다 — API 키라면 콘솔에서 월 한도를 걸어 둔다.
 - [ ] (선택) **Sentry**: 프로젝트를 만들고 Vercel 환경변수(Production)에 `SENTRY_DSN`·`NEXT_PUBLIC_SENTRY_DSN`.
       소스맵 업로드까지 하려면 `SENTRY_AUTH_TOKEN`·`SENTRY_ORG`·`SENTRY_PROJECT`. 없으면 꺼진 채로 동작한다.
-- [ ] (선택) **요금제**: 상업적 이용이면 Vercel Pro. PITR 보존 기간이 필요하면 Neon Launch. 비공개 리포에 merge 게이트를
-      강제하려면 GitHub Pro(아래 6번). 근거는 [SETUP.md](SETUP.md) 0번, [STACK.md](STACK.md).
+- [ ] (선택) **요금제**: 상업적 이용이면 Vercel Pro. PITR 보존 기간이 필요하면 Neon Launch. 비공개 리포에 브랜치 규칙(필수 체크 `test`)을
+      걸려면 GitHub Pro(아래 6번). 근거는 [SETUP.md](SETUP.md) 0번, [STACK.md](STACK.md).
 - [ ] (선택) 변수: `CLAUDE_REVIEW_MODEL`·`CLAUDE_REVIEW_MODEL_HIGH`(리뷰 모델), `PREDEPLOY_SNAPSHOTS`(기본 3) — [SETUP.md](SETUP.md) 4번.
 
 이미 있는 것은 그대로 쓴다: `DATABASE_URL`, `VERCEL_TOKEN`, `NEON_API_KEY`, `BOT_PAT`, 변수 `NEON_PROJECT_ID`·`VERCEL_PROJECT_ID`·`VERCEL_ORG_ID`.
@@ -60,7 +60,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 
 **그대로 복사** (프로젝트에 같은 이름이 없다)
 
-- `.github/workflows/pr-review.yml`, `risk-gate.yml`, `rollback.yml`
+- `.github/workflows/pr-review.yml`, `rollback.yml`
 - `.github/risk/`(rubric·config·review-prompt·review-schema), `.github/dependabot.yml`
 - `scripts/risk/`, `scripts/release.mjs`, `scripts/smoke.mjs`
 - `src/lib/env.ts`, `src/lib/log.ts`, `src/lib/sentry.ts`, `src/instrumentation.ts`, `src/instrumentation-client.ts`,
@@ -71,7 +71,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 **템플릿 버전으로 바꾸고 프로젝트 고유 수정을 다시 얹는다** (먼저 `git diff` 로 그 프로젝트가 템플릿에서 바꾼 부분을 확인한다)
 
 - `.github/workflows/ci.yml`, `deploy.yml`, `claude-mention.yml`, `preview-cleanup.yml`
-- `.github/pull_request_template.md`(롤백 계획·배포 후 확인 섹션이 생긴다 — risk-gate 가 읽는다), `.github/review/quality.md`
+- `.github/pull_request_template.md`(롤백 계획·배포 후 확인 섹션이 생긴다 — PR 리뷰가 읽는다), `.github/review/quality.md`
 - `scripts/gh.mjs`, `scripts/migrate.mjs`, `scripts/neon.mjs`, `scripts/preview-comment.mjs` 와 그 테스트(`test/migrate.test.ts`, `test/preview-comment.test.ts`)
 - `.claude/skills/project-status/SKILL.md`
 - `CLAUDE.md` — 템플릿의 운영 규칙(Risk 를 대하는 태도, expand → contract, 보안·개인정보, 장애·롤백)으로 바꾸고,
@@ -93,7 +93,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 **가져오지 않는다**(템플릿 전용): `new-project.yml`, `scripts/provision.mjs`, `scripts/init-project.mjs`, `test/template/`,
 `docs/bootstrap/`, `.claude/skills/new-project/`.
 
-**라벨**: `risk:low`·`risk:medium`·`risk:high`·`risk:very-high`·`risk:critical`·`risk-accepted`·`no-autofix`·`no-refine`
+**라벨**: `risk:low`·`risk:medium`·`risk:high`·`risk:very-high`·`risk:critical`·`no-autofix`·`no-refine`
 을 만든다(`gh api repos/{owner}/{repo}/labels` — 이름·색은 `scripts/provision.mjs` 의 `LABELS`). 라벨 정의를 만드는 것이고
 PR 에 붙이거나 떼는 것이 아니다.
 
@@ -114,16 +114,15 @@ PR 본문의 "배포 영향" 에 3번 체크리스트(사용자가 넣어야 할
 - [ ] Deploy 가 초록: 스냅샷 → 마이그레이션 → 스테이징 배포 → 스모크 → 승격 → 헬스체크 순으로 돈다.
       스모크가 401/403 이면 `VERCEL_AUTOMATION_BYPASS_SECRET` 이 없거나 틀렸다.
 - [ ] `https://<도메인>/api/health` 의 `commit` 이 merge 커밋 7자리.
-- [ ] 아무 작은 PR 을 올려 **PR 종합 코멘트**(CI · 리뷰 · Risk), `risk:*` 라벨, `risk-gate` 체크가 붙는지 본다.
+- [ ] 아무 작은 PR 을 올려 **PR 종합 코멘트**(CI · 리뷰 · Risk), `risk:*` 라벨이 붙는지 본다.
 - [ ] 그 PR 에서 `@claude` 로 작은 수정을 시켜, Claude 커밋에도 품질 리뷰와 AI 리뷰가 붙는지 본다
       ("결과를 남기지 못했습니다"·"AI 리뷰 없음" 이면 [DESIGN.md](DESIGN.md) 4번의 `allowed_bots`).
 - [ ] (선택) Rollback 워크플로를 한 번 돌려 직전 배포로 돌아가는지 보고, 다시 최신으로 배포한다.
 
-## 6. 마지막으로 merge 게이트
+## 6. 마지막으로 브랜치 규칙
 
-위 확인에서 `risk-gate` 체크가 한 번 이상 보고된 뒤에 브랜치 규칙을 건다(먼저 걸면 아직 없는 체크를 기다리느라 PR 이 막힌다).
-절차는 [SETUP.md](SETUP.md) 5번 — 필수 체크 `test`, `risk-gate`. 비공개 리포는 GitHub Pro 가 필요하다. 그 전까지
-`risk-gate` 는 표시만 되고 merge 를 막지 못한다.
+브랜치 규칙을 건다: [SETUP.md](SETUP.md) 5번 — 필수 체크 `test`. 비공개 리포는 GitHub Pro 가 필요하다.
+merge 를 막는 Risk 게이트는 없다(2026-10 에 없앴다) — Risk 는 PR 종합 코멘트로 보고 사람이 판단한다.
 
 ## 되돌리기
 

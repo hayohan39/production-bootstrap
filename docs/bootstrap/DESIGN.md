@@ -86,9 +86,8 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
   더 짧은 상한을 둬서, 멈춰도 뒤의 리포트·검사 step 은 돈다.
 - **문서만 바뀐 PR**(`scripts/ci-scope.mjs`): `test` job 은 돌되 설치·빌드·테스트를 건너뛰고, preview·refine 도 건너뛴다.
   `paths-ignore` 를 쓰지 않는 이유: 필수 체크(`test`)가 아예 안 생겨 merge 가 막힌다. 판정이 불확실하면 전체를 돈다.
-  템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. PR 리뷰(Risk)는 문서 PR 에도 돈다(게이트).
-- draft PR 은 프리뷰를 **건너뛰지 않는다**: risk-gate 가 ready_for_review 에 다시 '대기' 가 되지 않아, draft 때 통과한 게이트로
-  프로덕션 복제 DB 검증 전에 merge 될 수 있다(project-bootstrap 은 게이트가 없어 건너뛴다).
+  템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. PR 리뷰(Risk)는 문서 PR 에도 돈다.
+- draft PR 도 프리뷰를 돈다(Ready for review 때 CI 와 PR 리뷰가 다시 돈다).
 - **품질 리뷰는 PR 당 한 번**(4-1). auto-fix 는 PR 당 3회(`AUTOFIX_MAX_ATTEMPTS`).
 - Next.js 빌드 캐시(`.next/cache`)를 `actions/cache` 로 남긴다. main push 의 CI 가 PR 들의 출발점 캐시를 만든다.
 
@@ -104,7 +103,7 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
   PR 을 쓰는 쪽도 Claude 라서, 같은 모델이 같은 곳을 놓치는 것을 규칙이 막는다.
 - factor 는 0/5/10/15/20 만. 중간값을 허용하면 같은 PR 이 실행마다 다른 점수를 받는다.
 - 확인 불가(`unknown`)는 최소 10, AI 평가 없음은 최소 MEDIUM — "모르는 것은 안전하다고 보지 않는다".
-- 최종 계산·등급·게이트는 스크립트(`score.mjs`)가 한다. LLM 의 산술·형식 실수가 결과를 바꾸지 못한다.
+- 최종 계산·등급·확인 사항은 스크립트(`score.mjs`)가 한다. LLM 의 산술·형식 실수가 결과를 바꾸지 못한다.
 
 원 rubric 에서 바꾼 것:
 
@@ -114,12 +113,12 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 | 테스트 없음 = Testing 20 | 런타임 영향 없는 변경은 0 | 문서 수정이 MEDIUM 이 되는 것을 막는다 |
 | "외부 consumer 를 모르면 높게" | 알려진 consumer 를 명시(같은 리포 프런트, **이전 버전 서버 코드**, decisions.md 의 외부 연동) | 개인·소규모 서비스에서 Compatibility 가 늘 부풀지 않게 |
 | Deployment sequence (일반론) | **현재 배포된 코드가 쓰는 컬럼 삭제/이름 변경 → CRITICAL** (main 의 `src/` 를 검색) | 이 파이프라인은 마이그레이션 → 배포 순서이고 앱 롤백이 DB 를 되돌리지 않는다 |
-| Human review / Code Owner / Senior | 등급별 **merge 조건**(롤백 계획 → 배포 후 확인 → 관리자 수락) | 리뷰어가 한 명. "누가 보나" 대신 "무엇이 갖춰져야 하나" |
-| — | 리스크 평가 규칙 자체의 변경 → 최소 VERY HIGH | 에이전트가 게이트를 약하게 만드는 경로를 막는다 |
+| Human review / Code Owner / Senior | 등급별 **merge 전 확인**(롤백 계획 → 배포 후 확인, 코멘트로만) | 리뷰어가 한 명. "누가 보나" 대신 "무엇이 갖춰져야 하나" |
+| — | 리스크 평가 규칙 자체의 변경 → 최소 VERY HIGH | 에이전트가 평가 기준을 약하게 만드는 경로를 막는다 |
 
 ## 7. 평가는 main 의 코드로 한다 (자기 채점 방지)
 
-`ci.yml`(pull_request)은 **PR 의 버전**이 실행된다. 리뷰·점수·게이트를 거기 두면 PR 이 자기 평가 방식을
+`ci.yml`(pull_request)은 **PR 의 버전**이 실행된다. 리뷰·점수를 거기 두면 PR 이 자기 평가 방식을
 바꿀 수 있다. 그래서:
 
 - `pr-review.yml` 은 `workflow_run`(CI 완료) — 항상 기본 브랜치의 워크플로와 스크립트로 실행된다.
@@ -127,18 +126,17 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 - Claude 는 `./`(main) 에서 돌고 PR 은 `./pr/` 작업 트리로 읽는다. Claude Code 의 설정·훅(`.claude/`)은
   main 의 것만 로드된다. 프롬프트는 PR 안의 텍스트를 지시가 아닌 데이터로 다루게 한다(점수 조작 시도는 blocker).
 - Claude 를 돌리는 job 은 읽기 권한만, 코멘트·라벨·상태는 별도 `report` job 이 쓴다.
-- `risk-gate.yml` 은 `pull_request_target` 이지만 PR 의 코드를 체크아웃하지 않는다(이 트리거의 알려진 위험을 피하는 방식).
 - 종합 코멘트의 저장 데이터는 `github-actions[bot]` 이 쓴 코멘트에서만 읽는다(사람이 마커를 흉내 내도 무시).
 - 프리뷰 job 이 넘기는 메타데이터(`ci-meta` 아티팩트)는 형식을 검증해서만 쓴다(URL 은 `*.vercel.app` 만).
 
-## 8. merge 게이트는 커밋 상태 + 브랜치 규칙
+## 8. merge 게이트는 두지 않는다 (2026-10)
 
-- `risk-gate` 커밋 상태와 `test` 체크를 브랜치 규칙(ruleset)의 필수 체크로 건다. 비공개 리포는 GitHub Pro/Team 이 필요하다
-  (무료면 게이트는 표시만 되고 강제되지 않는다).
-- 새 커밋이 오면 `risk-gate` 가 바로 "대기" 가 된다 → 평가 전 merge 를 막는다.
-- `risk-accepted` 는 관리자/maintainer **사람 계정**만. 봇·에이전트가 붙이면 즉시 떼어진다.
-  수락은 그 커밋에만 유효하다(새 push 로 해제). 그래서 에이전트 토큰으로 `BOT_PAT` 에 주인의 PAT 를 쓰지 말 것 —
-  그러면 에이전트의 행동이 주인으로 보인다. Claude GitHub App 을 쓰거나 별도 머신 계정의 PAT 를 쓴다.
+- 브랜치 규칙(ruleset)의 필수 체크는 `test` 하나다. 비공개 리포는 GitHub Pro/Team 이 필요하다(무료면 표시만 되고 강제되지 않는다).
+- 예전에는 `risk-gate` 커밋 상태(HIGH → 롤백 계획, CRITICAL → 관리자의 `risk-accepted`)로 merge 를 막았다. 리뷰어가 사람 한 명이고
+  그 사람이 merge 버튼을 누르므로, 게이트는 같은 판단을 두 번 시키고 라벨·본문 이벤트마다 Actions 를 썼다. 그래서 없앴다 —
+  Risk 와 빠진 확인 사항은 PR 종합 코멘트가 보여 주고, 사람이 보고 merge 한다.
+- 에이전트 토큰으로 `BOT_PAT` 에 주인의 PAT 를 쓰지 말 것 — 그러면 에이전트의 행동(merge 포함)이 주인으로 보인다.
+  Claude GitHub App 을 쓰거나 별도 머신 계정의 PAT 를 쓴다.
 - GitHub 환경의 required reviewers(배포 승인)는 비공개 리포에서 Enterprise 전용이라 쓰지 않는다. merge 가 승인이다.
 
 ## 9. 배포: 스냅샷 → 마이그레이션 → 스테이징 → 승격 → 자동 롤백

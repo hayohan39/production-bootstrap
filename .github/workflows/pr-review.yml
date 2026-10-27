@@ -5,12 +5,12 @@ name: PR review
 #   scan    main 의 규칙으로 diff 를 스캔(결정적, 비용 없음) + CI 결과 수집
 #   review  Claude 가 .github/risk/rubric.md 로 코드 리뷰 + factor 점수 (structured output)
 #           CI 가 통과했을 때만. 실패하면 auto-fix 가 고친 뒤 다시 온다.
-#   report  최종 Risk Score → PR 종합 코멘트 · risk:* 라벨 · risk-gate 커밋 상태
+#   report  최종 Risk Score → PR 종합 코멘트 · risk:* 라벨 (merge 를 막지 않는다 — 판단은 사람이 코멘트를 보고 한다)
 #
 # workflow_run 은 항상 기본 브랜치(main)의 이 파일과 코드로 실행된다. PR 의 코드는 git 데이터로
 # 읽기만 하고 실행하지 않는다 → PR 이 자기 평가 규칙을 바꿔 통과할 수 없다.
 #
-# 끄기: 변수 CLAUDE_REVIEW=false (규칙 스캔·게이트는 계속 돈다)
+# 끄기: 변수 CLAUDE_REVIEW=false (규칙 스캔·종합 코멘트는 계속 돈다)
 on:
   workflow_run:
     workflows: [CI]
@@ -161,7 +161,7 @@ jobs:
     if: needs.scan.outputs.review == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    # Claude 에게는 읽기 권한만 준다. 코멘트·라벨·상태는 report job 이 쓴다.
+    # Claude 에게는 읽기 권한만 준다. 코멘트·라벨은 report job 이 쓴다.
     permissions:
       contents: read
       pull-requests: read
@@ -231,7 +231,6 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-      statuses: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -246,7 +245,7 @@ jobs:
           name: review-input
           path: .review
 
-      - name: Publish summary, label and gate
+      - name: Publish summary and label
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RESULT: ${{ needs.review.outputs.result }}

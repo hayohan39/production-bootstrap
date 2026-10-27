@@ -13,7 +13,7 @@ project-bootstrap(개인용)의 Vercel Hobby + Neon Free 조합을 실제 운영
 | DB | **Neon Launch** → 트래픽이 늘면 Scale | Free 는 PITR 6시간·작은 한도. Launch 는 PITR 최대 7일, Scale 은 30일 | 사용량 과금(컴퓨트 시간 + 저장량), 최소 금액 없음 |
 | 오류·성능 | **Sentry** (`@sentry/nextjs`, 이미 연결됨) | 개인용엔 없음. 릴리스(커밋) 단위로 오류 추적 | 무료 플랜으로 시작, 팀이 생기면 유료 |
 | 업타임 | Better Stack Uptime 또는 Checkly | 외부에서 `/api/health` 감시 + 알림 | 무료 플랜으로 충분 |
-| CI/CD | GitHub Actions + **GitHub Pro(개인)/Team(조직)** | 비공개 리포에 브랜치 규칙(필수 체크 `test`·`risk-gate`)을 걸려면 유료 플랜 | 사용자당 월 수 달러 |
+| CI/CD | GitHub Actions + **GitHub Pro(개인)/Team(조직)** | 비공개 리포에 브랜치 규칙(필수 체크 `test`)을 걸려면 유료 플랜 | 사용자당 월 수 달러 |
 | 코드 리뷰 | Claude (claude-code-action) + Risk Score | 개인용은 열 때 한 번. 여기는 push 마다, 위험하면 더 강한 모델 | API 사용량 (PR 크기·모델에 따라 다름 — 변수 `CLAUDE_REVIEW_MODEL` 로 조정) |
 
 **다음은 기능이 필요해질 때 정한다** (`docs/decisions.md` 미결 — 첫 기능 전에 인증부터):
@@ -85,8 +85,8 @@ project-bootstrap(개인용)의 Vercel Hobby + Neon Free 조합을 실제 운영
 | --- | --- | --- |
 | 대상 | 개인 앱, 실험 | 실제 사용자가 있는 서비스(베타~) |
 | 요금제 | 전부 무료 | Vercel Pro, Neon Launch, GitHub Pro/Team, Sentry |
-| 리뷰 | PR 열 때 1회, ✅/✋ | CI 뒤 push 마다, ✅/✋ + **Risk Score 0–100** + merge 게이트 |
-| merge 게이트 | 프로세스(사람이 누름) | 브랜치 규칙: `test` + `risk-gate` 필수, CRITICAL 은 관리자 수락 |
+| 리뷰 | PR 열 때 1회, ✅/✋ | CI 뒤 push 마다, ✅/✋ + **Risk Score 0–100** (코멘트, merge 를 막지 않음) |
+| merge 게이트 | 프로세스(사람이 누름) | 같음 + 브랜치 규칙 `test` 필수 |
 | 배포 | 마이그레이션 → 배포 → 헬스체크 | **스냅샷** → 마이그레이션(lock_timeout) → **스테이징 → 스모크 → 승격** → 헬스체크 → **자동 롤백** |
 | 복구 | 수동 Instant Rollback | Rollback 워크플로, 스냅샷 브랜치, PITR, 런북 |
 | 관측 | `/api/health` | + Sentry, 구조화 로그, 업타임 모니터 |

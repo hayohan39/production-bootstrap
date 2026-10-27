@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { canAccept, runScan } from "../scripts/risk/cli.mjs";
+import { runScan } from "../scripts/risk/cli.mjs";
 import { bandLevel, toAnchor } from "../scripts/risk/levels.mjs";
 import { decodeData, previewCell, renderSummary } from "../scripts/risk/render.mjs";
 import {
@@ -364,34 +364,35 @@ describe("applyPolicy", () => {
   });
 
   it("MEDIUM 은 조건 없음", () => {
-    expect(applyPolicy(assessment("MEDIUM"), { prBody: "", acceptance: null, ciOk: true }).state).toBe("success");
+    expect(applyPolicy(assessment("MEDIUM"), { prBody: "", ciOk: true }).state).toBe("success");
   });
 
   it("HIGH 는 롤백 계획이 필요", () => {
     const a = assessment("HIGH");
-    expect(applyPolicy(a, { prBody: body(), acceptance: null, ciOk: true }).state).toBe("failure");
-    expect(applyPolicy(a, { prBody: body("이전 배포로 promote, DB 변경 없음"), acceptance: null, ciOk: true }).state).toBe("success");
+    expect(applyPolicy(a, { prBody: body(), ciOk: true }).state).toBe("failure");
+    expect(applyPolicy(a, { prBody: body("이전 배포로 promote, DB 변경 없음"), ciOk: true }).state).toBe("success");
   });
 
-  it("CRITICAL 은 현재 커밋에 대한 수락이 필요", () => {
+  it("CRITICAL 도 롤백 계획·배포 후 확인만 본다(사람의 수락은 merge 버튼이다)", () => {
     const a = assessment("CRITICAL");
     const filled = body("expand/contract 2단계, 실패 시 pre-deploy 스냅샷 복구", "/api/health 와 가입 흐름 수동 확인");
-    expect(applyPolicy(a, { prBody: filled, acceptance: null, ciOk: true }).state).toBe("failure");
-    expect(applyPolicy(a, { prBody: filled, acceptance: { by: "owner", sha: "old" }, ciOk: true }).state).toBe("failure");
-    expect(applyPolicy(a, { prBody: filled, acceptance: { by: "owner", sha: "abc" }, ciOk: true }).state).toBe("success");
+    expect(applyPolicy(a, { prBody: body(), ciOk: true }).state).toBe("failure");
+    const checks = applyPolicy(a, { prBody: filled, ciOk: true });
+    expect(checks.state).toBe("success");
+    expect(checks.requirements.map((r) => r.id)).toEqual(["rollback", "verify"]);
   });
 
   it("파괴적 마이그레이션 + 롤백 계획 없음 → CRITICAL", () => {
     const sql = "drop table legacy;";
     const s = scan([{ path: "migrations/9.sql", status: "A", added: [sql] }], { head: { "migrations/9.sql": sql } });
     const a = finalize({ scan: s, review: review({ migration: 20 }), sha: "abc" });
-    const gate = applyPolicy(a, { prBody: body(), acceptance: null, ciOk: true });
-    expect(gate.level).toBe("CRITICAL");
-    expect(gate.reasons[0]).toContain("롤백 계획");
+    const checks = applyPolicy(a, { prBody: body(), ciOk: true });
+    expect(checks.level).toBe("CRITICAL");
+    expect(checks.reasons[0]).toContain("롤백 계획");
   });
 
-  it("CI 실패면 막는다", () => {
-    expect(applyPolicy(assessment("LOW"), { prBody: "", acceptance: null, ciOk: false }).state).toBe("failure");
+  it("CI 실패면 확인 사항으로 남긴다", () => {
+    expect(applyPolicy(assessment("LOW"), { prBody: "", ciOk: false }).state).toBe("failure");
   });
 });
 
@@ -415,30 +416,14 @@ describe("previewCell", () => {
 describe("renderSummary", () => {
   it("결론이 첫 줄에 있고 데이터가 왕복된다", () => {
     const a = finalize({ scan: baseScan(), review: review({ security: 10, scope: 10, testing: 10, migration: 5 }), sha: "abcdef1234" });
-    const gate = applyPolicy(a, { prBody: "", acceptance: null, ciOk: true });
+    const checks = applyPolicy(a, { prBody: "", ciOk: true });
     const ci = { test: "success", preview: "success", previewUrl: "https://x-y.vercel.app", ok: true };
-    const text = renderSummary({ assessment: a, gate, ci, previous: { sha: "000", total: 30, level: "MEDIUM" } });
+    const text = renderSummary({ assessment: a, checks, ci, previous: { sha: "000", total: 30, level: "MEDIUM" } });
     const lines = text.split("\n");
     expect(lines[0]).toBe("<!-- pr-summary -->");
     expect(lines[1]).toContain(`Risk ${a.total}/100`);
     expect(lines[2]).toContain("이전 커밋 30");
     expect(decodeData(text).assessment.total).toBe(a.total);
-  });
-});
-
-describe("canAccept", () => {
-  it("봇·에이전트는 거부, 개인 리포 소유자는 허용", async () => {
-    const before = process.env.GITHUB_REPOSITORY;
-    process.env.GITHUB_REPOSITORY = "owner/app";
-    try {
-      expect(await canAccept("claude[bot]", "Bot")).toBe(false);
-      expect(await canAccept("owner", "Bot")).toBe(false);
-      expect(await canAccept("", "User")).toBe(false);
-      expect(await canAccept("Owner", "User")).toBe(true);
-    } finally {
-      if (before === undefined) delete process.env.GITHUB_REPOSITORY;
-      else process.env.GITHUB_REPOSITORY = before;
-    }
   });
 });
 

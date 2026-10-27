@@ -18,7 +18,7 @@ GitHub 에서 PR 종합 코멘트(CI · 코드 리뷰 · Risk Score)를 보고 m
 
 | 누가 | 무엇을 |
 | --- | --- |
-| 사용자 | 요청 · PR 판단 · **merge** · CRITICAL 변경의 `risk-accepted` 수락 · 비밀값/요금제 설정 |
+| 사용자 | 요청 · PR 판단(CRITICAL 포함) · **merge** · 비밀값/요금제 설정 |
 | Claude (세션) | 브랜치 → 구현 → 로컬 검증 → 커밋 → push → **PR 생성** → CI·리뷰·Risk 결과 보고 → 지적 사항 수정 |
 | GitHub Actions | CI · auto-fix · PR 프리뷰(프로덕션 복제 DB) · AI 리뷰 + Risk Score · merge 후 스냅샷 → 마이그레이션 → 스테이징 → 승격 → 자동 롤백 |
 
@@ -42,10 +42,11 @@ GitHub 에서 PR 종합 코멘트(CI · 코드 리뷰 · Risk Score)를 보고 m
 7. push 후 **PR 을 만든다**. 본문은 `.github/pull_request_template.md` 형식으로 파일에 쓰고:
    `node scripts/gh.mjs pr-create --title "feat: ..." --body-file /tmp/pr.md`
    빈 섹션을 남기지 않는다. 사용자는 휴대폰으로 본다 — 첫 줄에서 무엇이 바뀌는지 알 수 있게.
-8. `node scripts/gh.mjs pr-watch` 로 CI 와 PR 리뷰(risk-gate)가 끝날 때까지 기다린 뒤 두세 줄로 보고한다:
-   CI 결과 · 리뷰 판정과 주요 지적 · **Risk 등급/점수와 merge 게이트 상태** · 프리뷰 링크.
+8. `node scripts/gh.mjs pr-watch` 로 CI 와 PR 리뷰(종합 코멘트)가 끝날 때까지 기다린 뒤 두세 줄로 보고한다:
+   CI 결과 · 리뷰 판정과 주요 지적 · **Risk 등급/점수와 빠진 확인 사항** · 프리뷰 링크.
+   merge 를 막는 게이트는 없다(필수 체크는 `test` 뿐). HIGH 이상이면 사용자가 무엇을 보고 merge 할지 분명히 적는다.
    - 리뷰 finding(blocker/major)은 같은 브랜치에서 고쳐 push 한다. 고치지 않을 것은 이유를 PR 에 쓴다.
-   - 게이트가 막혔으면 무엇이 필요한지(롤백 계획, 배포 후 확인, 사람의 수락) 정확히 알린다.
+   - 확인 사항이 빠졌으면(롤백 계획, 배포 후 확인) 채운다. CRITICAL 이면 나눠서 배포할 수 없는지 사용자에게 먼저 묻는다.
 9. **merge 하지 않는다.** 사용자가 요청해도 "PR 에서 merge 버튼을 눌러 주세요" 라고 안내한다.
 
 PR 이 이미 열려 있는 브랜치에서 추가 요청을 받으면 같은 브랜치에 커밋을 더한다.
@@ -58,8 +59,8 @@ PR 이 이미 열려 있는 브랜치에서 추가 요청을 받으면 같은 �
 - **점수를 낮추려고 위험을 숨기지 않는다.** SQL 을 쪼개 스캐너를 피하거나, 테스트를 형식적으로 추가하거나,
   PR 본문에 확인하지 않은 주장을 쓰지 않는다. 진짜로 위험을 줄이는 방법(작게 나누기, expand/contract,
   테스트, 기능 플래그)만 쓴다.
-- `risk-accepted` 라벨, `risk:*` 라벨, PR 리뷰 상태는 **절대 건드리지 않는다.** 수락은 사람의 몫이다.
-- `.github/risk/*`, `scripts/risk/*`, `.github/workflows/pr-review.yml`, `risk-gate.yml` 을 바꾸는 것은
+- `risk:*` 라벨, PR 리뷰 상태는 **절대 건드리지 않는다.** 위험을 받아들이고 merge 하는 것은 사람의 몫이다.
+- `.github/risk/*`, `scripts/risk/*`, `.github/workflows/pr-review.yml` 을 바꾸는 것은
   평가 기준 자체를 바꾸는 일이다. 사용자가 명시적으로 요청했을 때만 하고, 별도 PR 로 한다.
 
 > **GitHub CLI 주의**: 클라우드 세션의 GitHub 프록시는 GraphQL 을 막는다. `gh pr create`,
@@ -69,7 +70,7 @@ PR 이 이미 열려 있는 브랜치에서 추가 요청을 받으면 같은 �
 
 ## 개발 상황을 물으면
 
-`project-status` 스킬을 따른다. 열린 PR 과 각 CI·리뷰·**Risk 등급/게이트**, 최근 배포(롤백 여부 포함),
+`project-status` 스킬을 따른다. 열린 PR 과 각 CI·리뷰·**Risk 등급**, 최근 배포(롤백 여부 포함),
 `docs/decisions.md` 의 미결 항목을 짧게 정리하고 다음에 할 일을 제안한다.
 
 ## 장애·롤백 요청을 받으면
@@ -86,12 +87,10 @@ PR 생성/push ─► ci.yml
                  ├ preview  Neon 브랜치(프로덕션 복제)에 마이그레이션 → Vercel 프리뷰 → 스모크 테스트
                  ├ refine   위가 통과하면 Claude 품질 리뷰 → 작은 정리는 [claude-refine] 커밋, 큰 것은 제안 (PR 당 1회)
                  └ autofix  위가 실패하면 Claude 가 고쳐서 [claude-autofix] 커밋 (PR 당 최대 3회)
-             ─► risk-gate.yml (pull_request_target)  새 커밋이면 risk-gate 를 "대기" 로
 CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)
                  ├ scan     규칙 기반 스캔 → factor 최저치 · hard override
                  ├ review   Claude 리뷰 + Risk factor 점수 (CI 통과 시)
-                 └ report   PR 종합 코멘트 · risk:* 라벨 · risk-gate 상태
-라벨/본문 변경 ─► risk-gate.yml  게이트만 다시 계산 (risk-accepted 는 관리자 사람만)
+                 └ report   PR 종합 코멘트 · risk:* 라벨 (merge 를 막지 않음)
 PR 코멘트 @claude ─► claude-mention.yml  지시대로 수정
 merge ─► deploy.yml  DB 스냅샷 → 마이그레이션 → 스테이징 배포 → 스모크 → promote → 헬스체크 → (실패 시) 자동 롤백
 수동 ─► rollback.yml  직전 성공 배포로 되돌리기

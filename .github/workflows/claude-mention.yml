@@ -4,7 +4,7 @@ name: Claude Mention
 # PR 리뷰 중 "merge 대신 수정 요청" 을 할 때 쓴다. (쓰기 권한이 있는 사람만 부를 수 있다.)
 #
 # 도구는 허용 목록으로 제한한다: 라벨·PR 상태·리뷰를 바꾸는 gh 명령은 쓸 수 없다
-# (특히 risk-accepted 는 사람만 붙일 수 있어야 한다).
+# (risk:* 라벨은 PR 리뷰만, merge 는 사람만 한다).
 on:
   issue_comment:
     types: [created]
