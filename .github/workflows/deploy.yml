@@ -348,3 +348,31 @@ jobs:
             risk=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/labels" --jq '[.[].name | select(startswith("risk:"))][0] // empty' || true)
             gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$msg${risk:+ · 이 PR 의 Risk: \`$risk\`}"
           fi
+
+  # main 의 CI(test)가 실패하면 배포하지 않는다. 그 사실을 merge 된 PR 에 알린다(그러지 않으면 Actions 의 빨간 CI 로만 보인다).
+  # 취소(cancelled)는 뒤이은 merge 가 대신 검사·배포하므로 알리지 않는다. CI 가 실패할 때만 도는 1분짜리 job 이고,
+  # 실행은 실패로 끝난다("마지막 성공 배포" 로 집계되지 않게).
+  ci-failed:
+    name: Notify skipped deploy
+    if: >-
+      !github.event.repository.is_template
+      && github.event_name == 'workflow_run'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Comment on the merged PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEPLOY_SHA/pulls" --jq '[.[] | select(.merged_at != null)][0].number // empty' || true)
+          msg="⏭️ main 검사(test)가 실패해 **배포하지 않았습니다** — 프로덕션은 이전 버전 그대로입니다. 고친 PR 을 merge 하면 그때 함께 배포됩니다. [CI 로그]($CI_URL)"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$pr" ]; then gh pr comment "$pr" --repo "$GITHUB_REPOSITORY" --body "$msg"; fi
+          # 실패로 끝낸다 — 이 실행이 "성공한 배포" 로 집계되면 다음 배포가 이 커밋을 이미 배포된 것으로 본다.
+          exit 1
