@@ -84,7 +84,7 @@ DB 복구(스냅샷/PITR)는 데이터에 영향이 크므로 절차를 설명�
 PR 생성/push ─► ci.yml
                  ├ test     마이그레이션 append-only 확인 · lint · typecheck · test · 빈 Postgres 마이그레이션 · build
                  ├ preview  Neon 브랜치(프로덕션 복제)에 마이그레이션 → Vercel 프리뷰 → 스모크 테스트
-                 ├ refine   위가 통과하면 Claude 품질 리뷰 → 작은 정리는 [claude-refine] 커밋, 큰 것은 제안 (PR 당 1회)
+                 ├ refine   위가 통과하면 Claude 품질 리뷰 → 작은 정리는 [claude-refine] 커밋, 큰 것은 제안 (PR 당 1회 — `quality-reviewed` 라벨)
                  └ autofix  위가 실패하면 Claude 가 고쳐서 [claude-autofix] 커밋 (PR 당 최대 3회)
              ─► risk-gate.yml (pull_request_target)  새 커밋이면 risk-gate 를 "대기" 로
 CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)
@@ -93,7 +93,9 @@ CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)
                  └ report   PR 종합 코멘트 · risk:* 라벨 · risk-gate 상태
 라벨/본문 변경 ─► risk-gate.yml  게이트만 다시 계산 (risk-accepted 는 관리자 사람만)
 PR 코멘트 @claude ─► claude-mention.yml  지시대로 수정
-merge ─► deploy.yml  DB 스냅샷 → 마이그레이션 → 스테이징 배포 → 스모크 → promote → 헬스체크 → (실패 시) 자동 롤백
+merge ─► ci.yml 의 test (merge 결과물을 한 번 더 — 브랜치 보호가 "최신 main 포함" 을 요구하지 않아서)
+      ─► 통과하면 deploy.yml  DB 스냅샷 → 마이그레이션 → 스테이징 배포 → 스모크 → promote → 헬스체크 → (실패 시) 자동 롤백
+                              (문서만 바뀐 merge 는 배포하지 않음. test 가 실패하면 배포하지 않음)
 수동 ─► rollback.yml  직전 성공 배포로 되돌리기
 PR 닫힘 ─► preview-cleanup.yml  Neon 프리뷰 브랜치 삭제
 ```

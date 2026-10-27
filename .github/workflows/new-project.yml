@@ -143,8 +143,8 @@ jobs:
           REGION: ${{ vars.NEON_REGION || 'aws-ap-southeast-1' }}
         run: node scripts/provision.mjs --repo "$TARGET" --region "$REGION"
 
-      # 마지막에 push 한다. 이 push 가 새 리포지토리의 deploy.yml 을 깨워
-      # (위에서 채운 값으로) 첫 프로덕션 배포가 일어난다.
+      # 마지막에 push 한다. 이 push 가 새 리포지토리의 CI(main test)를 깨우고, 통과하면 deploy.yml 이
+      # (위에서 채운 값으로) 첫 프로덕션 배포를 한다.
       - name: Initialize the project and push
         env:
           ACTOR: ${{ github.actor }}

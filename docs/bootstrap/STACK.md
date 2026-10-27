@@ -90,5 +90,5 @@ project-bootstrap(개인용)의 Vercel Hobby + Neon Free 조합을 실제 운영
 | 배포 | 마이그레이션 → 배포 → 헬스체크 | **스냅샷** → 마이그레이션(lock_timeout) → **스테이징 → 스모크 → 승격** → 헬스체크 → **자동 롤백** |
 | 복구 | 수동 Instant Rollback | Rollback 워크플로, 스냅샷 브랜치, PITR, 런북 |
 | 관측 | `/api/health` | + Sentry, 구조화 로그, 업타임 모니터 |
-| 의존성 | 수동 | Dependabot(주간, 묶음) |
+| 의존성 | 수동 | 수동(세션에서 요청) + 보안 알림(Dependabot alerts) |
 | 보안 기본값 | — | 보안 헤더, 쿼리 타임아웃, 비밀값 스캔, 개인정보 미전송 |

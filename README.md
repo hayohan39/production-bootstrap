@@ -84,7 +84,6 @@ PR 이 "좋은 코드인가" 가 아니라 **"프로덕션에서 잘못되면 �
     rubric.md            Risk Score 기준 (AI 리뷰어가 읽는 문서)
     review-prompt.md     리뷰 지시문 · review-schema.json  구조화 출력 스키마
     config.json          경로 분류 (인프라·공통 모듈·인증·API …)
-  dependabot.yml         주간 의존성 업데이트(묶음)
 scripts/
   risk/                  scan(규칙) · score(합산·게이트) · render(코멘트) · cli
   migrate.mjs            마이그레이션 러너 (체크섬, lock_timeout, no-transaction)
