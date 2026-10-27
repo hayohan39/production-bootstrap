@@ -93,7 +93,7 @@ CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)
                  └ report   PR 종합 코멘트 · risk:* 라벨 · risk-gate 상태
 라벨/본문 변경 ─► risk-gate.yml  게이트만 다시 계산 (risk-accepted 는 관리자 사람만)
 PR 코멘트 @claude ─► claude-mention.yml  지시대로 수정
-merge ─► ci.yml 의 test (merge 결과물을 한 번 더 — 브랜치 보호가 "최신 main 포함" 을 요구하지 않아서)
+merge ─► ci.yml 의 test (merge 결과물을 한 번 더, 항상 전체 — 브랜치 보호가 "최신 main 포함" 을 요구하지 않아서)
       ─► 통과하면 deploy.yml  DB 스냅샷 → 마이그레이션 → 스테이징 배포 → 스모크 → promote → 헬스체크 → (실패 시) 자동 롤백
                               (문서만 바뀐 merge 는 배포하지 않음. test 가 실패하면 배포하지 않음)
 수동 ─► rollback.yml  직전 성공 배포로 되돌리기

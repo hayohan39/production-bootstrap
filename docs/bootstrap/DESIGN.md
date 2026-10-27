@@ -94,7 +94,7 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 - **품질 리뷰는 PR 당 한 번**(4-1). auto-fix 는 PR 당 3회(`AUTOFIX_MAX_ATTEMPTS`).
 - Next.js 빌드 캐시(`.next/cache`)를 `actions/cache` 로 남긴다. main push 의 CI 가 PR 들의 출발점 캐시를 만든다.
 - **main push 의 test 는 일부러 쓰는 시간이다.** 브랜치 보호가 "최신 main 포함"(strict)을 요구하지 않아 merge 결과물은
-  PR 에서 검사되지 않았다. deploy.yml 은 그 test 가 통과한 뒤 `workflow_run` 으로 시작한다(strict 를 켜면 PR 마다 "Update branch"
+  PR 에서 검사되지 않았다. 앞선 merge 의 CI 가 취소됐을 수 있어 문서만 바뀐 merge 도 전체를 돈다. deploy.yml 은 그 test 가 통과한 뒤 `workflow_run` 으로 시작한다(strict 를 켜면 PR 마다 "Update branch"
   로 CI 전체가 한 번 더 돌아 더 비싸다). `workflow_run` 실행의 `head_sha` 는 그 순간의 main 이라 배포한 커밋과 다를 수 있어,
   `run-name` 에 배포 커밋을 넣고 "마지막 성공 배포" 는 그 이름에서 읽는다.
 - **Dependabot 버전 업데이트를 쓰지 않는다.** 쉬는 리포에도 매주 PR → CI·리뷰가 돌았다. 의존성은 세션에서 요청해 올리고,

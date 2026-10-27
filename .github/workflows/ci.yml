@@ -11,7 +11,7 @@ name: CI
 # PR 종합 코멘트와 risk-gate 상태를 갱신한다. 리뷰/게이트를 이 파일에 두지 않는 이유:
 # 이 파일은 PR 의 버전이 실행되므로, PR 이 자기 평가 방식을 바꿀 수 있게 된다.
 #
-# main push 에서는 test 만 돈다. 브랜치 보호가 "최신 main 포함" 을 요구하지 않아 merge 결과물은 PR 에서 검사되지
+# main push 에서는 test 만 돈다(문서만이어도 전체). 브랜치 보호가 "최신 main 포함" 을 요구하지 않아 merge 결과물은 PR 에서 검사되지
 # 않았기 때문이다. 프로덕션 배포(deploy.yml)는 이 test 가 통과한 뒤에 시작한다.
 on:
   pull_request:
@@ -74,14 +74,15 @@ jobs:
             exit 1
           fi
 
-      # 문서만 바뀐 PR·merge 는 아래 단계와 preview·refine 을 건너뛴다(scripts/ci-changes.mjs — 세 템플릿 공통 규칙).
-      # 이 job 은 끝까지 돌아 필수 체크(test)는 통과한다. PR 은 base 와, main push 는 직전 main(before)과 비교한다.
-      # 템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. 수동 실행도 전체.
+      # 문서만 바뀐 PR 은 아래 단계와 preview·refine 을 건너뛴다(scripts/ci-changes.mjs — 세 템플릿 공통 규칙).
+      # 이 job 은 끝까지 돌아 필수 체크(test)는 통과한다. main push 는 항상 전체를 돈다 — 직전 push 의 CI 가 취소됐으면
+      # (뒤이은 merge 가 cancel-in-progress 로 취소) 그 코드는 main 에서 검사된 적이 없어서, 문서만 바뀐 merge 라도
+      # 건너뛰면 검사 없이 배포된다. 템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. 수동 실행도 전체.
       - name: Scope
         id: scope
-        if: github.event_name != 'workflow_dispatch' && !github.event.repository.is_template
+        if: github.event_name == 'pull_request' && !github.event.repository.is_template
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
         run: node scripts/ci-changes.mjs --base "$BASE"
 
       - name: Install
