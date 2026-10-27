@@ -7,7 +7,7 @@
 //   node scripts/gh.mjs pr-create --title "feat: ..." --body-file /tmp/body.md [--draft]
 //   node scripts/gh.mjs pr-list                       열린 PR + 각 PR 의 CI 상태
 //   node scripts/gh.mjs pr-status [<번호>]             체크 결과 + 프리뷰 코멘트 (번호 없으면 현재 브랜치)
-//   node scripts/gh.mjs pr-watch [<번호>]              체크가 끝날 때까지 기다린 뒤 pr-status
+//   node scripts/gh.mjs pr-watch [<번호>]              체크와 PR 리뷰(종합 코멘트)가 끝날 때까지 기다린 뒤 pr-status
 //   node scripts/gh.mjs deploys                       최근 main 배포 결과
 //   node scripts/gh.mjs risk-history [--limit 20]     merge 된 PR 의 Risk 등급과 배포 결과 (점수 보정용)
 //   node scripts/gh.mjs dispatch <workflow.yml> [key=value ...]
@@ -133,17 +133,34 @@ try {
     case 'pr-watch': {
       const number = positional[0] ?? currentPr(R);
       const deadline = Date.now() + 30 * 60_000;
+      let checksDoneAt = null;
       for (;;) {
         const { head } = api(`repos/${R}/pulls/${number}`);
         const list = [...checks(R, head.sha), ...statuses(R, head.sha)];
-        // risk-gate 는 PR 리뷰가 끝날 때까지 pending 이다. 그것까지 기다린다.
-        const pending = list.filter((c) => c.status !== 'completed');
-        if (list.length && !pending.length) break;
+        const pending = list.filter((c) => c.status !== 'completed').map((c) => c.name);
+        // PR 리뷰(pr-review.yml)는 CI 가 끝난 뒤 따로 돌아 이 커밋의 체크로 붙지 않는다.
+        // 이 커밋을 평가한 종합 코멘트가 갱신될 때까지 기다린다.
+        if (list.length && !pending.length) {
+          if (riskSummary(R, number)?.data?.assessment?.sha === head.sha) break;
+          // PR 리뷰는 CI 가 취소되면 돌지 않는다. 체크가 끝난 뒤 15분이 지나도 안 붙으면 실패한 것으로 본다.
+          if (list.some((c) => c.conclusion === 'cancelled')) {
+            console.log('CI 가 취소돼 PR 리뷰는 돌지 않습니다(새 커밋의 CI 가 끝나면 붙습니다).');
+            break;
+          }
+          checksDoneAt ??= Date.now();
+          if (Date.now() - checksDoneAt > 15 * 60_000) {
+            console.log('체크가 끝난 지 15분이 지나도 PR 리뷰 코멘트가 없습니다 — Actions → PR review 실행을 확인하세요.');
+            break;
+          }
+          pending.push('PR 리뷰');
+        } else {
+          checksDoneAt = null;
+        }
         if (Date.now() > deadline) {
           console.log('30분이 지나 기다리기를 멈춥니다.');
           break;
         }
-        process.stdout.write(`대기 중: ${pending.map((c) => c.name).join(', ') || '체크 시작 전'}\n`);
+        process.stdout.write(`대기 중: ${pending.join(', ') || '체크 시작 전'}\n`);
         await new Promise((r) => setTimeout(r, 20_000));
       }
       prStatus(R, number);

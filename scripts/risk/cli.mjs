@@ -1,13 +1,13 @@
-// Risk Score CLI. pr-review.yml / risk-gate.yml 이 부른다(로컬에서 scan 만 따로 돌려 볼 수도 있다).
+// Risk Score CLI. pr-review.yml 이 부른다(로컬에서 scan 만 따로 돌려 볼 수도 있다).
 //
 //   node scripts/risk/cli.mjs scan --base origin/main --head HEAD --out .review
 //       diff 를 읽어 .review/facts.json, facts.md, pr.diff 를 만든다. (git 만 필요)
 //   node scripts/risk/cli.mjs ci --run-id <id> [--meta ci-meta.json] --out .review/ci.json
 //       트리거한 CI 실행의 job 결과와 프리뷰 정보를 모은다.
 //   node scripts/risk/cli.mjs report --dir .review --pr <n> --sha <sha> [--review review.json] [--model <id>]
-//       최종 점수 계산 → PR 종합 코멘트 갱신 → risk:* 라벨 → risk-gate 상태.
-//   node scripts/risk/cli.mjs gate --pr <n> --sha <sha> --action <labeled|unlabeled|edited|synchronize> [--label x --actor login --actor-type User]
-//       라벨·본문 변경 때 저장된 평가로 게이트만 다시 계산한다(LLM 호출 없음).
+//       최종 점수 계산 → PR 종합 코멘트 갱신 → risk:* 라벨. merge 를 막지는 않는다(판단은 사람이 코멘트를 보고 한다).
+//       AI 리뷰는 PR 당 1회: 새로 리뷰했으면 PR 에 `ai-reviewed` 라벨을 붙이고, 이번에 리뷰하지 않았으면(PR 당 1회로
+//       건너뜀·CI 실패·draft) 직전 종합 코멘트의 AI 평가를 이어 쓴다(규칙 스캔·CI 는 이번 커밋 것).
 //
 // 보안: 이 스크립트는 항상 main(기준 브랜치)의 코드로 실행된다. PR 의 코드는 git 데이터로만 읽고
 // 실행하지 않는다. 그래서 PR 이 자기 평가 규칙을 바꿔 자기를 통과시킬 수 없다.
@@ -22,8 +22,6 @@ import { decodeData, renderFacts, renderSummary, SUMMARY_MARKER } from './render
 import { parseUnifiedDiff, scanChanges, sourceRoots } from './scan.mjs';
 import { applyPolicy, finalize } from './score.mjs';
 
-const ACCEPT_LABEL = 'risk-accepted';
-const STATUS_CONTEXT = 'risk-gate';
 const LABEL_COLORS = { low: '2da44e', medium: 'd4a72c', high: 'e16f24', 'very-high': 'cf222e', critical: '6e0b0b' };
 
 function args(argv) {
@@ -173,30 +171,40 @@ async function setRiskLabel(pr, level, current) {
   }
 }
 
-async function removeLabel(pr, name) {
-  await gh(`/repos/${repo()}/issues/${pr}/labels/${encodeURIComponent(name)}`, { method: 'DELETE', allow404: true });
-}
-
-async function setStatus(sha, state, description, targetUrl) {
-  await gh(`/repos/${repo()}/statuses/${sha}`, {
-    method: 'POST',
-    body: { state, context: STATUS_CONTEXT, description: description.slice(0, 140), ...(targetUrl ? { target_url: targetUrl } : {}) },
-  });
-}
-
 const repoUrl = () => `${process.env.GITHUB_SERVER_URL ?? 'https://github.com'}/${repo()}`;
 
-async function publish({ pr, prData, assessment, ci, previous, acceptance, existing }) {
-  const gate = applyPolicy(assessment, { prBody: prData.body ?? '', acceptance, ciOk: ci.ok });
-  const body = renderSummary({ assessment, gate, ci, previous, acceptance, repoUrl: repoUrl() });
-  const comment = await upsertSummary(pr, existing, body);
-  await setRiskLabel(pr, gate.level, (prData.labels ?? []).map((l) => l.name));
-  await setStatus(assessment.sha, gate.state, gate.description, comment?.html_url);
-  return gate;
+async function publish({ pr, prData, assessment, ci, previous, existing }) {
+  const checks = applyPolicy(assessment, { prBody: prData.body ?? '', ciOk: ci.ok });
+  const body = renderSummary({ assessment, checks, ci, previous, repoUrl: repoUrl() });
+  await upsertSummary(pr, existing, body);
+  await setRiskLabel(pr, checks.level, (prData.labels ?? []).map((l) => l.name));
+  return checks;
 }
 
 // ---------------------------------------------------------------------------
 // report
+
+const REVIEWED_LABEL = 'ai-reviewed';
+
+/** 저장된 평가(assessment)에서 AI 리뷰 결과를 다시 만든다 — finalize 에 그대로 넣으면 같은 factor 점수가 나온다. */
+export function previousReview(assessment) {
+  if (!assessment?.review) return null;
+  const factors = {};
+  for (const [name, f] of Object.entries(assessment.factors ?? {})) {
+    if (f.llm != null) factors[name] = { score: f.llm, evidence: f.evidence, confidence: f.confidence };
+  }
+  // AI 가 건 hard override 도 되살린다(빠지면 이어 쓰는 push 마다 등급이 내려간다).
+  const overrides = (assessment.overrides ?? [])
+    .filter((o) => o.source === 'review')
+    .map(({ level, condition, evidence }) => ({ level, condition, evidence }));
+  const r = assessment.review;
+  return {
+    summary: r.summary,
+    verdict: r.verdict,
+    findings: r.findings,
+    risk: { factors, overrides, drivers: r.drivers, mitigations: r.mitigations, unknowns: r.unknowns, affected: r.affected },
+  };
+}
 
 export async function runReport({ dir, pr, sha, reviewPath, model }) {
   const facts = JSON.parse(readFileSync(path.join(dir, 'facts.json'), 'utf8'));
@@ -222,79 +230,29 @@ export async function runReport({ dir, pr, sha, reviewPath, model }) {
   const prev = existing ? decodeData(existing.body) : null;
   const previous = prev?.assessment ? { sha: prev.assessment.sha, total: prev.assessment.total, level: prev.assessment.level } : null;
 
-  // 수락은 특정 커밋에 대한 것이다. 새 커밋이 오면 수락을 해제한다.
-  let acceptance = prev?.acceptance?.sha === sha ? prev.acceptance : null;
-  const labels = (prData.labels ?? []).map((l) => l.name);
-  if (!acceptance && labels.includes(ACCEPT_LABEL)) {
-    await removeLabel(pr, ACCEPT_LABEL);
-    prData.labels = prData.labels.filter((l) => l.name !== ACCEPT_LABEL);
-    acceptance = null;
+  // AI 리뷰는 PR 당 1회. 이번에 리뷰하지 않았으면 이유(PR 당 1회·CI 실패·draft)와 상관없이 직전 AI 평가를 이어 쓰고
+  // 어느 커밋을 본 것인지 남긴다 — CI 가 한 번 실패한 push 가 AI 평가를 덮어써 잃지 않게.
+  // 라벨은 리뷰가 통과(approve)했을 때만 붙인다 — "수정 필요" 면 지적을 고친 다음 push 에서 다시 리뷰해야 하므로.
+  let reviewSha = review ? sha : null;
+  const labeled = (prData.labels ?? []).some((l) => l.name === REVIEWED_LABEL);
+  if (review && review.verdict === 'approve') {
+    await ensureLabel(REVIEWED_LABEL, 'c5def5', 'AI 리뷰를 마침 (떼고 push 하면 다시 리뷰)');
+    await gh(`/repos/${repo()}/issues/${pr}/labels`, { method: 'POST', body: { labels: [REVIEWED_LABEL] } });
+  } else if (review) {
+    if (labeled) await gh(`/repos/${repo()}/issues/${pr}/labels/${REVIEWED_LABEL}`, { method: 'DELETE', allow404: true });
+  } else if (prev?.assessment?.review) {
+    review = previousReview(prev.assessment);
+    model = prev.assessment.model;
+    reviewSha = prev.assessment.reviewSha ?? prev.assessment.sha;
+  } else if (labeled) {
+    // 라벨은 있는데 이어 쓸 AI 평가가 없다(코멘트가 지워졌거나 사람이 붙임) → 떼어서 다음 push 에 다시 리뷰한다.
+    await gh(`/repos/${repo()}/issues/${pr}/labels/${REVIEWED_LABEL}`, { method: 'DELETE', allow404: true });
   }
 
-  const assessment = finalize({ scan: facts, review, sha, ci, model: review ? model : null });
-  const gate = await publish({ pr, prData, assessment, ci, previous, acceptance, existing });
-  console.log(`Risk ${assessment.total}/100 ${gate.level} · gate ${gate.state}: ${gate.description}`);
-  return { assessment, gate };
-}
-
-// ---------------------------------------------------------------------------
-// gate (라벨·본문 변경)
-
-/** risk-accepted 를 붙일 수 있는 사람인가: 봇이 아니고 admin/maintain 권한. */
-export async function canAccept(login, actorType) {
-  if (!login || login.endsWith('[bot]') || (actorType && actorType !== 'User')) return false;
-  // 개인 리포지토리의 소유자는 항상 admin 이다(권한 API 를 부르지 않아도 된다).
-  if (login.toLowerCase() === repo().split('/')[0].toLowerCase()) return true;
-  try {
-    const res = await gh(`/repos/${repo()}/collaborators/${encodeURIComponent(login)}/permission`, { allow404: true });
-    return Boolean(res) && res.user?.type === 'User' && ['admin', 'maintain'].includes(res.permission);
-  } catch (error) {
-    console.log(`::warning::권한을 확인하지 못했습니다(${error.message}). 수락하지 않습니다.`);
-    return false;
-  }
-}
-
-export async function runGate({ pr, sha, action, label, actor, actorType }) {
-  if (action === 'synchronize' || action === 'opened' || action === 'reopened') {
-    await setStatus(sha, 'pending', 'CI 와 리뷰가 끝나면 Risk Score 로 평가합니다');
-    return;
-  }
-  if (!['labeled', 'unlabeled', 'edited'].includes(action)) return;
-
-  const prData = await gh(`/repos/${repo()}/pulls/${pr}`);
-  const existing = await findSummary(pr);
-  const data = existing ? decodeData(existing.body) : null;
-  const assessed = data?.assessment?.sha === sha;
-
-  if (action === 'labeled' && label === ACCEPT_LABEL) {
-    const allowed = await canAccept(actor, actorType);
-    if (!allowed || !assessed) {
-      await removeLabel(pr, ACCEPT_LABEL);
-      const why = !allowed
-        ? `@${actor} 는 수락 권한이 없습니다(관리자·maintainer 사람 계정만, 봇·에이전트 불가).`
-        : '이 커밋의 Risk 평가가 아직 끝나지 않았습니다. 평가 코멘트가 갱신된 뒤 다시 붙여 주세요.';
-      await gh(`/repos/${repo()}/issues/${pr}/comments`, { method: 'POST', body: { body: `\`${ACCEPT_LABEL}\` 라벨을 떼었습니다 — ${why}` } });
-      return;
-    }
-    data.acceptance = { by: actor, sha };
-  } else if (action === 'unlabeled' && label === ACCEPT_LABEL) {
-    if (data) data.acceptance = null;
-  }
-
-  if (!assessed) {
-    console.log('현재 커밋의 평가가 아직 없습니다. 평가가 끝나면 report 가 게이트를 정합니다.');
-    return;
-  }
-  const gate = await publish({
-    pr,
-    prData,
-    assessment: data.assessment,
-    ci: data.ci,
-    previous: null,
-    acceptance: data.acceptance ?? null,
-    existing,
-  });
-  console.log(`gate ${gate.state}: ${gate.description}`);
+  const assessment = { ...finalize({ scan: facts, review, sha, ci, model: review ? model : null }), reviewSha };
+  const checks = await publish({ pr, prData, assessment, ci, previous, existing });
+  console.log(`Risk ${assessment.total}/100 ${checks.level}: ${checks.description}`);
+  return { assessment, checks };
 }
 
 // ---------------------------------------------------------------------------
@@ -320,10 +278,8 @@ if (isMain) {
       await output({ ci_ok: ci.ok, test: ci.test, preview: ci.preview });
     } else if (command === 'report') {
       await runReport({ dir: a.dir ?? '.review', pr: a.pr, sha: a.sha, reviewPath: a.review, model: a.model });
-    } else if (command === 'gate') {
-      await runGate({ pr: a.pr, sha: a.sha, action: a.action, label: a.label, actor: a.actor, actorType: a['actor-type'] });
     } else {
-      throw new Error(`알 수 없는 명령: ${command ?? '(없음)'} — scan | ci | report | gate`);
+      throw new Error(`알 수 없는 명령: ${command ?? '(없음)'} — scan | ci | report`);
     }
   } catch (error) {
     console.error(`::error::${error.message}`);

@@ -6,7 +6,7 @@ name: New project
 #   2. 공통 시크릿 복사 (Claude / Vercel / Neon 토큰)
 #   3. Neon 프로젝트 + Vercel 프로젝트 생성, 서로 연결 (scripts/provision.mjs)
 #   4. 플레이스홀더 치환 + 템플릿 전용 파일 제거 후 push → 첫 프로덕션 배포
-#   5. main 보호 규칙(PR 필수, 필수 체크 test·risk-gate) + Risk 라벨
+#   5. main 보호 규칙(PR 필수, 필수 체크 test) + Risk 라벨
 #
 # Claude 클라우드 세션은 GitHub 프록시 때문에 리포지토리를 직접 만들 수 없다.
 # 대신 이 리포지토리에 attach 된 세션에서 이 워크플로를 dispatch 하면 된다:
@@ -192,7 +192,7 @@ jobs:
             echo "| 빠진 시크릿 | ${SKIPPED:-없음} |"
             echo "| Neon + Vercel 프로비저닝 | ${PROVISION:-미실행} |"
             echo "| 초기화 커밋 | ${INIT:-미실행} |"
-            echo "| main 보호 (test · risk-gate 필수) | ${PROTECT:-미실행} |"
+            echo "| main 보호 (test 필수) | ${PROTECT:-미실행} |"
             echo ""
             if [ "$PROTECT" != "success" ]; then
               echo "⚠️ main 보호 규칙을 걸지 못했습니다. 비공개 리포는 GitHub Pro/Team 이 필요합니다."

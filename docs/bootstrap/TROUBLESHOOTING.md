@@ -13,7 +13,7 @@
 **Provision 실패 — `project-scoped`** — `NEON_API_KEY` 가 project-scoped 키다. Personal 키로 바꾸고 재실행.
 
 **`Protect main` 실패** — 비공개 리포의 브랜치 규칙은 GitHub Pro/Team 이 필요하다. 요금제를 올리고 재실행하거나
-[SETUP.md](SETUP.md) 5번대로 수동 설정. 그 전까지 `risk-gate` 는 표시만 되고 merge 를 막지 못한다.
+[SETUP.md](SETUP.md) 5번대로 수동 설정. 그 전까지 `test` 는 표시만 되고 merge 를 막지 못한다.
 
 **배포 보호 우회 시크릿 경고** — Vercel 토큰 권한 또는 플랜 문제. Vercel → Project → Settings →
 Deployment Protection → Protection Bypass for Automation 에서 만들고 값을 리포지토리 시크릿
@@ -26,18 +26,15 @@ Deployment Protection → Protection Bypass for Automation 에서 만들고 값�
 - CI 가 취소됐으면(새 push 로 대체) 건너뛴다. 새 커밋의 CI 가 끝나면 붙는다.
 - Actions → PR review 실행 로그의 `scan` job 에서 "PR 을 찾지 못함 / head 가 바뀜" 메시지를 확인.
 
-**`risk-gate` 가 계속 "대기"** — 그 커밋의 PR review 가 실패했거나 아직 안 돌았다. Actions → PR review → Re-run.
+**`pr-watch` 가 계속 "PR 리뷰" 대기** — 그 커밋의 PR review 가 실패했거나 아직 안 돌았다. Actions → PR review → Re-run.
 CI 를 다시 돌려도 된다(CI 완료가 리뷰를 깨운다).
 
 **AI 리뷰 없음 (규칙 기반 점수만)** — 종합 코멘트의 "AI 리뷰" 줄에 이유가 있다: CI 실패, draft, `CLAUDE_REVIEW=false`,
-Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 평가 없이 HIGH 이상이면 `risk-accepted` 가 필요하다.
+Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 평가 없이 HIGH 이상이면 사람이 diff 를 직접 본다.
 
-**Dependabot PR 에 AI 리뷰가 없음 / 코멘트·상태가 안 붙음** — Dependabot 이 시작한 실행에는 Claude 시크릿이 없어
-규칙 기반 점수만 붙는다(설계). 토큰 권한 제한으로 코멘트·상태까지 안 붙으면, PR 의 **Update branch** 버튼으로
+**Dependabot(보안 업데이트) PR 에 AI 리뷰가 없음 / 코멘트가 안 붙음** — Dependabot 이 시작한 실행에는 Claude 시크릿이 없어
+규칙 기반 점수만 붙는다(설계). 토큰 권한 제한으로 코멘트까지 안 붙으면, PR 의 **Update branch** 버튼으로
 사람이 커밋을 하나 만들면 그 CI 는 사람이 시작한 실행이 되어 AI 리뷰까지 붙는다. (Re-run 은 원래 권한 그대로 돈다.)
-
-**`risk-accepted` 를 붙였는데 떨어짐** — 붙인 계정이 admin/maintain 이 아니거나 봇이다, 또는 그 커밋의 평가가 끝나기
-전에 붙였다. 이유가 PR 코멘트로 남는다. 새 커밋을 push 하면 수락은 자동으로 풀린다(다시 붙인다).
 
 **점수가 이상하게 높다/낮다** — 종합 코멘트의 "규칙 기반 신호" 를 펼쳐 어떤 규칙이 floor 를 올렸는지 본다.
 경로 분류는 `.github/risk/config.json`, 규칙은 `scripts/risk/scan.mjs`, 기준은 `.github/risk/rubric.md`.

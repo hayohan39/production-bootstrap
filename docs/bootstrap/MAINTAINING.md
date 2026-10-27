@@ -27,13 +27,13 @@
 
 - `ci.yml` 의 `test` 는 템플릿에서도 돈다 → 템플릿 앱이 항상 초록인지 확인.
 - `preview`, `deploy.yml`, `rollback.yml`, `preview-cleanup.yml` 은 `github.event.repository.is_template` 으로 건너뛴다.
-- `pr-review.yml` · `risk-gate.yml` 은 템플릿 PR 에서도 돈다(템플릿 자체 변경도 Risk 로 평가). 둘 다 main 에 있는
-  버전이 실행되므로, 이 두 파일이나 `scripts/risk/` 를 바꾸는 PR 은 **바꾸기 전 규칙**으로 평가된다.
+- `pr-review.yml` 은 템플릿 PR 에서도 돈다(템플릿 자체 변경도 Risk 로 평가). main 에 있는
+  버전이 실행되므로, 이 파일이나 `scripts/risk/` 를 바꾸는 PR 은 **바꾸기 전 규칙**으로 평가된다.
 
 ## Risk 규칙을 바꿀 때
 
 1. 기준을 바꾸면 `.github/risk/rubric.md` 와 `scripts/risk/scan.mjs` / `score.mjs` 를 함께 고친다(AI 와 규칙이 같은 기준을 보게).
-2. `test/risk.test.ts` 에 그 규칙의 케이스를 추가한다(SQL 분류, floor, override, 게이트).
+2. `test/risk.test.ts` 에 그 규칙의 케이스를 추가한다(SQL 분류, floor, override, 확인 사항).
 3. `review-schema.json` 을 바꾸면 홑따옴표(')를 넣지 않는다 — 워크플로가 `--json-schema '<json>'` 로 넘긴다.
 
 ## 이미 만든 프로젝트에 템플릿 변경을 반영하려면

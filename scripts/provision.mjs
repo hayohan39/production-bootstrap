@@ -3,7 +3,8 @@
 //
 //   node scripts/provision.mjs --repo owner/name [--region aws-ap-southeast-1]
 //   node scripts/provision.mjs --repo owner/name --protect
-//       main 브랜치 규칙(ruleset): PR 필수, 필수 체크 test·risk-gate, force push·삭제 금지.
+//       main 브랜치 규칙(ruleset): PR 필수, 필수 체크 test, force push·삭제 금지.
+//       이미 있는 규칙은 갱신한다(예전 프로젝트의 필수 체크 risk-gate 도 이걸로 빠진다).
 //       초기화 push 뒤에 실행한다(규칙이 먼저 걸리면 초기화 커밋을 main 에 push 할 수 없다).
 //
 // 필요한 환경변수:
@@ -159,7 +160,6 @@ const LABELS = [
   ['risk:high', 'e16f24', 'Risk Score HIGH'],
   ['risk:very-high', 'cf222e', 'Risk Score VERY HIGH'],
   ['risk:critical', '6e0b0b', 'Risk Score CRITICAL'],
-  ['risk-accepted', '0e8a16', '관리자가 이 커밋의 위험을 수락함 (CRITICAL merge 조건)'],
   ['no-autofix', 'bfdadc', 'CI 실패 시 Claude auto-fix 끄기'],
   ['no-refine', 'bfdadc', 'CI 뒤 Claude 품질 리뷰(자동 정리) 끄기'],
 ];
@@ -198,7 +198,7 @@ function protectMain(repo) {
         type: 'required_status_checks',
         parameters: {
           strict_required_status_checks_policy: false,
-          required_status_checks: [{ context: 'test' }, { context: 'risk-gate' }],
+          required_status_checks: [{ context: 'test' }],
         },
       },
     ],
@@ -207,7 +207,7 @@ function protectMain(repo) {
   const found = existing.find((r) => r.name === ruleset.name);
   const path = found ? `repos/${repo}/rulesets/${found.id}` : `repos/${repo}/rulesets`;
   ghJson(['api', '-X', found ? 'PUT' : 'POST', path, '--input', '-'], JSON.stringify(ruleset));
-  console.log(`  ruleset "${ruleset.name}" ${found ? '갱신' : '생성'} (필수 체크: test, risk-gate)`);
+  console.log(`  ruleset "${ruleset.name}" ${found ? '갱신' : '생성'} (필수 체크: test)`);
 }
 
 // ---------------------------------------------------------------------------

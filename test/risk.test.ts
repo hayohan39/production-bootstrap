@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { canAccept, runScan } from "../scripts/risk/cli.mjs";
+import { previousReview, runScan } from "../scripts/risk/cli.mjs";
 import { bandLevel, toAnchor } from "../scripts/risk/levels.mjs";
 import { decodeData, previewCell, renderSummary } from "../scripts/risk/render.mjs";
 import {
@@ -364,34 +364,42 @@ describe("applyPolicy", () => {
   });
 
   it("MEDIUM 은 조건 없음", () => {
-    expect(applyPolicy(assessment("MEDIUM"), { prBody: "", acceptance: null, ciOk: true }).state).toBe("success");
+    expect(applyPolicy(assessment("MEDIUM"), { prBody: "", ciOk: true }).state).toBe("success");
   });
 
   it("HIGH 는 롤백 계획이 필요", () => {
     const a = assessment("HIGH");
-    expect(applyPolicy(a, { prBody: body(), acceptance: null, ciOk: true }).state).toBe("failure");
-    expect(applyPolicy(a, { prBody: body("이전 배포로 promote, DB 변경 없음"), acceptance: null, ciOk: true }).state).toBe("success");
+    expect(applyPolicy(a, { prBody: body(), ciOk: true }).state).toBe("failure");
+    expect(applyPolicy(a, { prBody: body("이전 배포로 promote, DB 변경 없음"), ciOk: true }).state).toBe("success");
   });
 
-  it("CRITICAL 은 현재 커밋에 대한 수락이 필요", () => {
+  it("CRITICAL 도 롤백 계획·배포 후 확인만 본다(사람의 수락은 merge 버튼이다)", () => {
     const a = assessment("CRITICAL");
     const filled = body("expand/contract 2단계, 실패 시 pre-deploy 스냅샷 복구", "/api/health 와 가입 흐름 수동 확인");
-    expect(applyPolicy(a, { prBody: filled, acceptance: null, ciOk: true }).state).toBe("failure");
-    expect(applyPolicy(a, { prBody: filled, acceptance: { by: "owner", sha: "old" }, ciOk: true }).state).toBe("failure");
-    expect(applyPolicy(a, { prBody: filled, acceptance: { by: "owner", sha: "abc" }, ciOk: true }).state).toBe("success");
+    expect(applyPolicy(a, { prBody: body(), ciOk: true }).state).toBe("failure");
+    const checks = applyPolicy(a, { prBody: filled, ciOk: true });
+    expect(checks.state).toBe("success");
+    expect(checks.requirements.map((r) => r.id)).toEqual(["rollback", "verify"]);
   });
 
   it("파괴적 마이그레이션 + 롤백 계획 없음 → CRITICAL", () => {
     const sql = "drop table legacy;";
     const s = scan([{ path: "migrations/9.sql", status: "A", added: [sql] }], { head: { "migrations/9.sql": sql } });
     const a = finalize({ scan: s, review: review({ migration: 20 }), sha: "abc" });
-    const gate = applyPolicy(a, { prBody: body(), acceptance: null, ciOk: true });
-    expect(gate.level).toBe("CRITICAL");
-    expect(gate.reasons[0]).toContain("롤백 계획");
+    const checks = applyPolicy(a, { prBody: body(), ciOk: true });
+    expect(checks.level).toBe("CRITICAL");
+    expect(checks.reasons[0]).toContain("롤백 계획");
   });
 
-  it("CI 실패면 막는다", () => {
-    expect(applyPolicy(assessment("LOW"), { prBody: "", acceptance: null, ciOk: false }).state).toBe("failure");
+  it("빠진 확인 사항 수를 코멘트 둘째 줄에 보여 준다", () => {
+    const a = assessment("HIGH");
+    const checks = applyPolicy(a, { prBody: body(), ciOk: true });
+    const line = renderSummary({ assessment: a, checks, ci: { test: "success", ok: true } }).split("\n")[2];
+    expect(line).toContain("merge 전 확인 **1개 빠짐 ⚠️**");
+  });
+
+  it("CI 실패면 확인 사항으로 남긴다", () => {
+    expect(applyPolicy(assessment("LOW"), { prBody: "", ciOk: false }).state).toBe("failure");
   });
 });
 
@@ -412,33 +420,45 @@ describe("previewCell", () => {
   });
 });
 
+describe("previousReview (AI 리뷰 PR 당 1회)", () => {
+  it("저장된 평가에서 다시 만든 리뷰로 finalize 하면 같은 점수가 나온다", () => {
+    const first = finalize({ scan: baseScan(), review: review({ security: 10, scope: 10, testing: 5 }), sha: "aaa" });
+    const again = finalize({ scan: baseScan(), review: previousReview(first), sha: "bbb" });
+    expect(again.total).toBe(first.total);
+    expect(again.level).toBe(first.level);
+    expect(again.llmAssessed).toBe(true);
+    expect(previousReview({ ...first, review: null })).toBeNull();
+  });
+
+  it("AI 가 건 hard override 도 이어 쓴다", () => {
+    const base = review({ security: 10 });
+    const withOverride = { ...base, risk: { ...base.risk, overrides: [{ level: "CRITICAL", condition: "인가 우회", evidence: "src/x.ts:1" }] } };
+    const first = finalize({ scan: baseScan(), review: withOverride, sha: "aaa" });
+    expect(first.level).toBe("CRITICAL");
+    expect(finalize({ scan: baseScan(), review: previousReview(first), sha: "bbb" }).level).toBe("CRITICAL");
+  });
+
+  it("이어 쓴 리뷰는 어느 커밋을 본 것인지 코멘트에 남긴다", () => {
+    const a = { ...finalize({ scan: baseScan(), review: review({ security: 10 }), sha: "bbbbbbb1" }), reviewSha: "aaaaaaa1" };
+    const checks = applyPolicy(a, { prBody: "", ciOk: true });
+    const text = renderSummary({ assessment: a, checks, ci: { test: "success", ok: true } });
+    expect(text).toContain("`aaaaaaa` 기준(PR 당 1회)");
+    expect(text.split("\n")[1]).toContain("(이전 커밋)");
+  });
+});
+
 describe("renderSummary", () => {
   it("결론이 첫 줄에 있고 데이터가 왕복된다", () => {
     const a = finalize({ scan: baseScan(), review: review({ security: 10, scope: 10, testing: 10, migration: 5 }), sha: "abcdef1234" });
-    const gate = applyPolicy(a, { prBody: "", acceptance: null, ciOk: true });
+    const checks = applyPolicy(a, { prBody: "", ciOk: true });
     const ci = { test: "success", preview: "success", previewUrl: "https://x-y.vercel.app", ok: true };
-    const text = renderSummary({ assessment: a, gate, ci, previous: { sha: "000", total: 30, level: "MEDIUM" } });
+    const text = renderSummary({ assessment: a, checks, ci, previous: { sha: "000", total: 30, level: "MEDIUM" } });
     const lines = text.split("\n");
     expect(lines[0]).toBe("<!-- pr-summary -->");
     expect(lines[1]).toContain(`Risk ${a.total}/100`);
     expect(lines[2]).toContain("이전 커밋 30");
+    expect(lines[2]).toContain("merge 전 확인 **모두 채움 ✅**");
     expect(decodeData(text).assessment.total).toBe(a.total);
-  });
-});
-
-describe("canAccept", () => {
-  it("봇·에이전트는 거부, 개인 리포 소유자는 허용", async () => {
-    const before = process.env.GITHUB_REPOSITORY;
-    process.env.GITHUB_REPOSITORY = "owner/app";
-    try {
-      expect(await canAccept("claude[bot]", "Bot")).toBe(false);
-      expect(await canAccept("owner", "Bot")).toBe(false);
-      expect(await canAccept("", "User")).toBe(false);
-      expect(await canAccept("Owner", "User")).toBe(true);
-    } finally {
-      if (before === undefined) delete process.env.GITHUB_REPOSITORY;
-      else process.env.GITHUB_REPOSITORY = before;
-    }
   });
 });
 

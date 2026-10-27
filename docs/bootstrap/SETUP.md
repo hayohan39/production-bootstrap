@@ -8,7 +8,7 @@ production-bootstrap 리포지토리에 한 번만 해 두면, 이후 새 프로
 | --- | --- | --- |
 | Vercel | **Pro** | Hobby 는 상업적 이용 금지. 스테이징 승격·롤백·리전 지정·Firewall |
 | Neon | **Launch** 이상 | PITR 보존 기간(Launch 최대 7일), 브랜치·컴퓨트 한도 |
-| GitHub | **Pro**(개인 계정) / **Team**(조직) | 비공개 리포에 브랜치 규칙(필수 체크 `test` · `risk-gate`) |
+| GitHub | **Pro**(개인 계정) / **Team**(조직) | 비공개 리포에 브랜치 규칙(필수 체크 `test`) |
 | Sentry | Developer(무료)로 시작 | 팀이 생기면 유료 |
 | Claude | API 키 권장 | 리뷰가 push 마다 돈다. 사용량을 콘솔에서 보고 한도를 걸 수 있다 |
 
@@ -59,7 +59,8 @@ https://github.com/apps/claude → Configure → Repository access → **All rep
 | 이름 | 기본값 | 의미 |
 | --- | --- | --- |
 | `AUTOFIX_MAX_ATTEMPTS` | `3` | PR 당 auto-fix 최대 시도 |
-| `CLAUDE_REVIEW` | (켜짐) | `false` 면 AI 리뷰를 끈다(규칙 기반 Risk 와 게이트는 계속) |
+| `CLAUDE_REVIEW` | (켜짐) | `false` 면 AI 리뷰를 끈다(규칙 기반 Risk 와 종합 코멘트는 계속) |
+| `CLAUDE_REVIEW_EVERY_PUSH` | (꺼짐) | `true` 면 AI 리뷰를 push 마다 돌린다. 기본은 PR 당 한 번(`ai-reviewed` 라벨, 이후 push 는 규칙 스캔만) |
 | `CLAUDE_REFINE` | (켜짐) | `false` 면 CI 뒤 품질 리뷰(refine) 끔. PR 하나만 끄려면 `no-refine` 라벨 |
 | `REFINE_EVERY_PUSH` | (꺼짐) | `true` 면 품질 리뷰를 작성자 push 마다 돌린다. 기본은 PR 당 한 번(`quality-reviewed` 라벨 — Actions 사용 시간 절약) |
 | `REFINE_MAX_ROUNDS` | `1` | 작성자 push 한 번에 품질 반영 커밋을 몇 번까지 연속으로 허용할지 |
@@ -72,7 +73,7 @@ https://github.com/apps/claude → Configure → Repository access → **All rep
 - Target: Default branch, Enforcement: Active
 - Restrict deletions, Block force pushes
 - Require a pull request before merging (승인 수 0 — 혼자 운영이면 자기 PR 을 승인할 수 없다)
-- Require status checks to pass: `test`, `risk-gate`
+- Require status checks to pass: `test`
 
 또는 요금제를 올린 뒤 New project 워크플로를 같은 이름으로 다시 실행한다(이미 된 것은 재사용).
 
@@ -82,7 +83,7 @@ claude.ai/code 에서 production-bootstrap 으로 세션을 열고 "테스트용
 
 1. Actions 의 New project 가 초록, 새 리포지토리의 Deploy 가 초록
 2. `https://hello-prod*.vercel.app/api/health` 가 `{"ok":true, "commit":"<sha 7자리>", "database":{"state":"ok"…}}`
-3. 새 리포지토리에서 아무 PR 이나 올리면 CI 뒤 **PR 종합 코멘트**(CI · 리뷰 · Risk)와 `risk:*` 라벨, `risk-gate` 체크가 붙는다
+3. 새 리포지토리에서 아무 PR 이나 올리면 CI 뒤 **PR 종합 코멘트**(CI · 리뷰 · Risk)와 `risk:*` 라벨이 붙는다
 4. 그 PR 을 merge 하면 PR 에 "🚀 프로덕션 배포 완료" 코멘트
 
 확인 후 지우려면: GitHub 리포지토리, Vercel 프로젝트, Neon 프로젝트를 각각 삭제.

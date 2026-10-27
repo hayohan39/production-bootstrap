@@ -19,7 +19,7 @@
 | 🟢 LOW · 🟡 MEDIUM | — |
 | 🟠 HIGH | PR 본문 "롤백 계획" |
 | 🔴 VERY HIGH | + "배포 후 확인" |
-| ⛔ CRITICAL | + 내가 `risk-accepted` 라벨 (그 커밋에 대해) |
+| ⛔ CRITICAL | + 나눠서 배포할 수 없는지 내가 직접 판단 |
 
 기준: [.github/risk/rubric.md](.github/risk/rubric.md). 진행 상황은 Claude 세션에서 "지금 상황 알려줘".
 
