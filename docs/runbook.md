@@ -71,6 +71,7 @@ Claude 세션에서 "장애 났어" 라고 하면 Claude 도 이 문서를 따�
 ## 정기 점검 (월 1회)
 
 - `node scripts/gh.mjs risk-history` — 등급과 실제 배포 결과가 맞는지(점수 보정).
-- Dependabot PR 처리(보안 업데이트 우선).
+- 의존성: 리포의 보안 알림(Security → Dependabot alerts)을 보고 필요한 것을 세션에서 올린다.
+  Dependabot 버전 업데이트 PR 은 쓰지 않는다(쉬는 달에도 Actions 시간을 쓴다).
 - Vercel · Neon · Sentry · Claude 사용량과 비용.
 - 분기 1회 복구 리허설: 최근 스냅샷 브랜치에 접속해 데이터를 읽어 본다.

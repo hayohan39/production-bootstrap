@@ -11,7 +11,8 @@ name: CI
 # PR 종합 코멘트와 risk-gate 상태를 갱신한다. 리뷰/게이트를 이 파일에 두지 않는 이유:
 # 이 파일은 PR 의 버전이 실행되므로, PR 이 자기 평가 방식을 바꿀 수 있게 된다.
 #
-# main push 에서는 test 만 돈다(배포는 deploy.yml).
+# main push 에서는 test 만 돈다(문서만이어도 전체). 브랜치 보호가 "최신 main 포함" 을 요구하지 않아 merge 결과물은 PR 에서 검사되지
+# 않았기 때문이다. 프로덕션 배포(deploy.yml)는 이 test 가 통과한 뒤에 시작한다.
 on:
   pull_request:
     branches: [main]
@@ -38,7 +39,7 @@ jobs:
     # 기본값(360분)이면 멈춘 job 하나가 월 사용 시간을 크게 깎는다. 평소 5분 안쪽이다.
     timeout-minutes: 20
     outputs:
-      docs_only: ${{ steps.scope.outputs.docs_only }}
+      code: ${{ steps.scope.outputs.code }}
     services:
       postgres:
         image: postgres:17
@@ -73,35 +74,37 @@ jobs:
             exit 1
           fi
 
-      # 문서만 바뀐 PR 은 아래 단계와 preview·refine 을 건너뛴다. 이 job 은 끝까지 돌아 필수 체크(test)는 통과한다.
-      # 템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다.
+      # 문서만 바뀐 PR 은 아래 단계와 preview·refine 을 건너뛴다(scripts/ci-changes.mjs — 세 템플릿 공통 규칙).
+      # 이 job 은 끝까지 돌아 필수 체크(test)는 통과한다. main push 는 항상 전체를 돈다 — 직전 push 의 CI 가 취소됐으면
+      # (뒤이은 merge 가 cancel-in-progress 로 취소) 그 코드는 main 에서 검사된 적이 없어서, 문서만 바뀐 merge 라도
+      # 건너뛰면 검사 없이 배포된다. 템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. 수동 실행도 전체.
       - name: Scope
         id: scope
         if: github.event_name == 'pull_request' && !github.event.repository.is_template
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
-        run: node scripts/ci-scope.mjs
+        run: node scripts/ci-changes.mjs --base "$BASE"
 
       - name: Install
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.code != 'false'
         run: npm ci
 
       - name: Lint
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.code != 'false'
         run: npm run lint
 
       - name: Typecheck
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.code != 'false'
         run: npm run typecheck
 
       - name: Test
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.code != 'false'
         run: npm test
 
       # 새 마이그레이션 SQL 이 빈 DB 에서 처음부터 끝까지 적용되는지.
       # 실제 데이터가 있는 상태에서의 검증은 preview job 이 한다.
       - name: Migrations on a fresh database
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.code != 'false'
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: npm run migrate
@@ -109,7 +112,7 @@ jobs:
       # Next.js 빌드 캐시(node_modules/next/dist/docs/01-app/02-guides/ci-build-caching.md).
       # PR 은 main push 의 CI 가 남긴 캐시를 이어 받는다.
       - uses: actions/cache@v6
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.code != 'false'
         with:
           path: .next/cache
           key: ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**') }}
@@ -117,7 +120,7 @@ jobs:
             ${{ runner.os }}-nextjs-${{ hashFiles('package-lock.json') }}-
 
       - name: Build
-        if: steps.scope.outputs.docs_only != 'true'
+        if: steps.scope.outputs.code != 'false'
         run: npm run build
 
   # ---------------------------------------------------------------------------
@@ -134,7 +137,7 @@ jobs:
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && !github.event.repository.is_template
-      && needs.test.outputs.docs_only != 'true'
+      && needs.test.outputs.code != 'false'
     runs-on: ubuntu-latest
     # Neon·Vercel 이 응답하지 않을 때 러너가 기다리며 시간을 쓰지 않게. 평소 3~5분이다.
     timeout-minutes: 20
@@ -280,7 +283,8 @@ jobs:
   # 동작이 바뀌지 않는 작은 정리는 직접 반영해 [claude-refine] 커밋으로 push 하고,
   # 큰 리팩터링·테스트 추가는 제안으로 PR 코멘트(🧹 품질 리뷰)에 남긴다.
   #
-  # PR 당 한 번만 돈다: 🧹 코멘트에 완료 표시가 있으면 건너뛴다(그 코멘트를 지우면 다음 push 에 다시 돈다).
+  # PR 당 1회: 시작할 때 `quality-reviewed` 라벨을 붙이고, 라벨이 있으면 job 을 건너뛴다(러너도 뜨지 않음).
+  # 리뷰가 결과를 남기지 못하면 라벨을 떼어 다음 push 에 다시 돈다. 다시 돌리려면 라벨을 떼고 push 한다.
   # 작성자 push 마다 돌리려면 변수 REFINE_EVERY_PUSH=true. 어느 쪽이든 HEAD 가 이미 [claude-refine] 커밋이면
   # 건너뛴다(REFINE_MAX_ROUNDS, 기본 1). 그래서 리뷰 ↔ 수정이 끝없이 돌지 않는다.
   # 문서만 바뀐 PR 은 건너뛴다. 끄기: PR 에 no-refine 라벨, 리포 전체는 변수 CLAUDE_REFINE=false.
@@ -292,13 +296,14 @@ jobs:
     if: >-
       !cancelled()
       && needs.test.result == 'success'
-      && needs.test.outputs.docs_only != 'true'
+      && needs.test.outputs.code != 'false'
       && needs.preview.result != 'failure'
       && github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.full_name == github.repository
       && github.event.pull_request.draft == false
       && github.event.pull_request.user.login != 'dependabot[bot]'
       && !contains(github.event.pull_request.labels.*.name, 'no-refine')
+      && (vars.REFINE_EVERY_PUSH == 'true' || !contains(github.event.pull_request.labels.*.name, 'quality-reviewed'))
       && vars.CLAUDE_REFINE != 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -332,21 +337,10 @@ jobs:
         id: guard
         env:
           MAX_ROUNDS: ${{ vars.REFINE_MAX_ROUNDS || '1' }}
-          EVERY_PUSH: ${{ vars.REFINE_EVERY_PUSH == 'true' }}
           SHA: ${{ github.event.pull_request.head.sha }}
           BASE: ${{ github.event.pull_request.base.ref }}
           HAS_BOT_PAT: ${{ secrets.BOT_PAT != '' }}
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
         run: |
-          # 이 PR 에서 이미 리뷰했으면(🧹 코멘트의 완료 표시) 건너뛴다. 조회가 실패하면 그냥 돈다.
-          if [ "$EVERY_PUSH" != true ]; then
-            reviewed=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
-              --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- quality-review:done -->"))) | .id' 2>/dev/null | head -n1 || true)
-            if [ -n "$reviewed" ]; then
-              echo "proceed=false" >> "$GITHUB_OUTPUT"; echo "이 PR 은 이미 품질 리뷰를 했습니다(다시 돌리려면 🧹 코멘트를 지운다)."; exit 0
-            fi
-          fi
           # CI 가 도는 사이 새 커밋이 왔으면 그 커밋의 CI 가 다시 부른다.
           if [ "$(git rev-parse HEAD)" != "$SHA" ]; then
             echo "proceed=false" >> "$GITHUB_OUTPUT"; echo "브랜치가 앞서 있어 건너뜁니다."; exit 0
@@ -363,6 +357,17 @@ jobs:
           done < <(git log --format=%s -n 20)
           echo "연속 품질 반영 커밋: $rounds / $MAX_ROUNDS"
           if [ "$rounds" -ge "$MAX_ROUNDS" ]; then echo "proceed=false" >> "$GITHUB_OUTPUT"; else echo "proceed=true" >> "$GITHUB_OUTPUT"; fi
+
+      # 리뷰를 시작하기 전에 라벨부터 붙인다 — [claude-refine] 커밋의 push 가 이 라벨을 보고 다시 부르지 않게.
+      - name: Mark the PR as reviewed
+        if: steps.guard.outputs.proceed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/labels" -f name=quality-reviewed -f color=c5def5 \
+            -f description="품질 리뷰를 마침 (떼고 push 하면 다시 리뷰)" >/dev/null 2>&1 || true
+          gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=quality-reviewed" >/dev/null
 
       - uses: actions/setup-node@v7
         if: steps.guard.outputs.proceed == 'true'
@@ -478,10 +483,11 @@ jobs:
           if [ "$REASON" = workflow ]; then
             report=$'### 🧹 품질 리뷰\n\n이 PR 은 `ci.yml` 을 바꿔서 건너뜁니다. Claude 실행기는 기본 브랜치와 같은 워크플로에서만 돌기 때문입니다 — merge 후 다음 PR 부터 동작합니다.'
           elif [ -s .refine/report.md ]; then
-            # 완료 표시: 다음 push 의 Round guard 가 보고 건너뛴다(REFINE_EVERY_PUSH 가 아니면).
-            report=$(cat .refine/report.md)$'\n\n<!-- quality-review:done -->'
+            report=$(cat .refine/report.md)
           else
-            report=$'### 🧹 품질 리뷰\n\n리뷰가 결과를 남기지 못했습니다(시크릿 없음·사용량 한도·장애). 실행 로그를 확인하세요.'
+            report=$'### 🧹 품질 리뷰\n\n리뷰가 결과를 남기지 못했습니다(시크릿 없음·사용량 한도·장애). 실행 로그를 확인하세요. 다음 push 에서 다시 돕니다.'
+            # 결과가 없으면 라벨을 떼어 다음 push 에 다시 돌게 한다.
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/quality-reviewed" >/dev/null 2>&1 || true
           fi
           if [ -s .refine/violations.txt ]; then
             report+=$'\n\n> [!WARNING]\n> 품질 리뷰 커밋이 보호된 경로를 바꿨습니다. 되돌려 주세요:\n'"$(sed 's/^/> - `/; s/$/`/' .refine/violations.txt)"

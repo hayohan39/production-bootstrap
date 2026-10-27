@@ -31,7 +31,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 | 복구 | Vercel 대시보드에서 수동 | `rollback.yml`, 스냅샷 브랜치, PITR, `docs/runbook.md` |
 | 관측 | `/api/health` | + Sentry(DSN 있을 때만), 구조화 로그 `src/lib/log.ts` |
 | 앱 기본값 | — | 보안 헤더, 쿼리 타임아웃, `src/lib/env.ts`(환경변수 검증) |
-| 의존성 | 수동 | Dependabot(npm 주간, Actions 월간) |
+| 의존성 | 수동 | 수동(세션에서 요청) + 보안 알림(Dependabot alerts) |
 
 **DB 는 그대로 쓴다.** 마이그레이션 러너가 같은 `schema_migrations` 테이블과 같은 체크섬을 쓰므로 이미 적용된 이력이
 그대로 이어진다. 전환 후 달라지는 것은 `lock_timeout 5s`·`statement_timeout 5min` 이 걸리고, CI 가 main 에 있는
