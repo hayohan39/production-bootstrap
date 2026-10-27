@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { runScan } from "../scripts/risk/cli.mjs";
+import { previousReview, runScan } from "../scripts/risk/cli.mjs";
 import { bandLevel, toAnchor } from "../scripts/risk/levels.mjs";
 import { decodeData, previewCell, renderSummary } from "../scripts/risk/render.mjs";
 import {
@@ -417,6 +417,24 @@ describe("previewCell", () => {
       }),
     ).toBe("✅ Ready · [Preview](https://a.vercel.app) · [Inspect](https://vercel.com/me/a/dpl) · 마이그레이션 ✅ · 스모크 ✅ · 10/6 12:06 KST");
     expect(previewCell({ preview: "skipped" })).toBe("⏭️");
+  });
+});
+
+describe("previousReview (AI 리뷰 PR 당 1회)", () => {
+  it("저장된 평가에서 다시 만든 리뷰로 finalize 하면 같은 점수가 나온다", () => {
+    const first = finalize({ scan: baseScan(), review: review({ security: 10, scope: 10, testing: 5 }), sha: "aaa" });
+    const again = finalize({ scan: baseScan(), review: previousReview(first), sha: "bbb" });
+    expect(again.total).toBe(first.total);
+    expect(again.level).toBe(first.level);
+    expect(again.llmAssessed).toBe(true);
+    expect(previousReview({ ...first, review: null })).toBeNull();
+  });
+
+  it("이어 쓴 리뷰는 어느 커밋을 본 것인지 코멘트에 남긴다", () => {
+    const a = { ...finalize({ scan: baseScan(), review: review({ security: 10 }), sha: "bbbbbbb1" }), reviewSha: "aaaaaaa1" };
+    const checks = applyPolicy(a, { prBody: "", ciOk: true });
+    const text = renderSummary({ assessment: a, checks, ci: { test: "success", ok: true } });
+    expect(text).toContain("`aaaaaaa` 기준(PR 당 1회)");
   });
 });
 

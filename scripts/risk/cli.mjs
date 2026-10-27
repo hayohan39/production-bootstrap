@@ -6,6 +6,8 @@
 //       트리거한 CI 실행의 job 결과와 프리뷰 정보를 모은다.
 //   node scripts/risk/cli.mjs report --dir .review --pr <n> --sha <sha> [--review review.json] [--model <id>]
 //       최종 점수 계산 → PR 종합 코멘트 갱신 → risk:* 라벨. merge 를 막지는 않는다(판단은 사람이 코멘트를 보고 한다).
+//       --reuse-review: AI 리뷰를 PR 당 1회만 한다. 이번에 리뷰하지 않았으면 직전 종합 코멘트의 AI 평가를 이어 쓴다
+//       (규칙 스캔·CI 는 이번 커밋 것). 새로 리뷰했으면 PR 에 `ai-reviewed` 라벨을 붙인다.
 //
 // 보안: 이 스크립트는 항상 main(기준 브랜치)의 코드로 실행된다. PR 의 코드는 git 데이터로만 읽고
 // 실행하지 않는다. 그래서 PR 이 자기 평가 규칙을 바꿔 자기를 통과시킬 수 없다.
@@ -182,7 +184,25 @@ async function publish({ pr, prData, assessment, ci, previous, existing }) {
 // ---------------------------------------------------------------------------
 // report
 
-export async function runReport({ dir, pr, sha, reviewPath, model }) {
+const REVIEWED_LABEL = 'ai-reviewed';
+
+/** 저장된 평가(assessment)에서 AI 리뷰 결과를 다시 만든다 — finalize 에 그대로 넣으면 같은 factor 점수가 나온다. */
+export function previousReview(assessment) {
+  if (!assessment?.review) return null;
+  const factors = {};
+  for (const [name, f] of Object.entries(assessment.factors ?? {})) {
+    if (f.llm != null) factors[name] = { score: f.llm, evidence: f.evidence, confidence: f.confidence };
+  }
+  const r = assessment.review;
+  return {
+    summary: r.summary,
+    verdict: r.verdict,
+    findings: r.findings,
+    risk: { factors, drivers: r.drivers, mitigations: r.mitigations, unknowns: r.unknowns, affected: r.affected },
+  };
+}
+
+export async function runReport({ dir, pr, sha, reviewPath, model, reuseReview = false }) {
   const facts = JSON.parse(readFileSync(path.join(dir, 'facts.json'), 'utf8'));
   const ci = existsSync(path.join(dir, 'ci.json')) ? JSON.parse(readFileSync(path.join(dir, 'ci.json'), 'utf8')) : { test: 'missing', preview: 'missing', ok: false };
   let review = null;
@@ -206,7 +226,18 @@ export async function runReport({ dir, pr, sha, reviewPath, model }) {
   const prev = existing ? decodeData(existing.body) : null;
   const previous = prev?.assessment ? { sha: prev.assessment.sha, total: prev.assessment.total, level: prev.assessment.level } : null;
 
-  const assessment = finalize({ scan: facts, review, sha, ci, model: review ? model : null });
+  // AI 리뷰는 PR 당 1회: 이번에 리뷰하지 않았으면 직전 평가의 AI 리뷰를 이어 쓰고, 어느 커밋을 본 것인지 남긴다.
+  let reviewSha = review ? sha : null;
+  if (review) {
+    await ensureLabel(REVIEWED_LABEL, 'c5def5', 'AI 리뷰를 마침 (떼고 push 하면 다시 리뷰)');
+    await gh(`/repos/${repo()}/issues/${pr}/labels`, { method: 'POST', body: { labels: [REVIEWED_LABEL] } });
+  } else if (reuseReview && prev?.assessment?.review) {
+    review = previousReview(prev.assessment);
+    model = prev.assessment.model;
+    reviewSha = prev.assessment.reviewSha ?? prev.assessment.sha;
+  }
+
+  const assessment = { ...finalize({ scan: facts, review, sha, ci, model: review ? model : null }), reviewSha };
   const checks = await publish({ pr, prData, assessment, ci, previous, existing });
   console.log(`Risk ${assessment.total}/100 ${checks.level}: ${checks.description}`);
   return { assessment, checks };
@@ -234,7 +265,7 @@ if (isMain) {
       writeFileSync(a.out ?? '.review/ci.json', JSON.stringify(ci, null, 2));
       await output({ ci_ok: ci.ok, test: ci.test, preview: ci.preview });
     } else if (command === 'report') {
-      await runReport({ dir: a.dir ?? '.review', pr: a.pr, sha: a.sha, reviewPath: a.review, model: a.model });
+      await runReport({ dir: a.dir ?? '.review', pr: a.pr, sha: a.sha, reviewPath: a.review, model: a.model, reuseReview: Boolean(a['reuse-review']) });
     } else {
       throw new Error(`알 수 없는 명령: ${command ?? '(없음)'} — scan | ci | report`);
     }

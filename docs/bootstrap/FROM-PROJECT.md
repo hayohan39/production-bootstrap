@@ -25,7 +25,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 
 | | 전환 전 (project) | 전환 후 (production) |
 | --- | --- | --- |
-| PR 리뷰 | `claude-review.yml` — PR 열 때 1회 | `pr-review.yml` — CI 뒤 push 마다, **Risk Score 0–100** + `risk:*` 라벨 |
+| PR 리뷰 | `claude-review.yml` — PR 열 때 1회 | `pr-review.yml` — CI 뒤 PR 당 1회(이후 push 는 규칙 스캔), **Risk Score 0–100** + `risk:*` 라벨 |
 | merge 게이트 | 사람이 누르는 것뿐 | 같음(필수 체크 `test`). Risk 는 코멘트로만 |
 | 배포 | 마이그레이션 → 프로덕션 배포 → 헬스체크 | **DB 스냅샷** → 마이그레이션(`lock_timeout`) → 도메인 없이 배포 → **스모크** → **승격** → 헬스체크 → 실패 시 **자동 롤백** |
 | 복구 | Vercel 대시보드에서 수동 | `rollback.yml`, 스냅샷 브랜치, PITR, `docs/runbook.md` |
@@ -44,7 +44,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 - [ ] **Vercel 배포 보호 우회 키**: Vercel 프로젝트 → Settings → Deployment Protection →
       **Protection Bypass for Automation** → 생성. 값을 GitHub 리포지토리 시크릿 `VERCEL_AUTOMATION_BYPASS_SECRET` 으로 넣는다.
       (deploy.yml 의 스모크 테스트가 도메인 연결 전 배포를 이 값으로 연다. 새 프로젝트는 provision 이 자동으로 만든다.)
-- [ ] **Claude 시크릿 확인**: `ANTHROPIC_API_KEY` 또는 `CLAUDE_CODE_OAUTH_TOKEN` 이 이미 있다. 리뷰가 push 마다 돌아
+- [ ] **Claude 시크릿 확인**: `ANTHROPIC_API_KEY` 또는 `CLAUDE_CODE_OAUTH_TOKEN` 이 이미 있다. AI 리뷰(PR 당 1회)·품질 리뷰가 늘어
       사용량이 늘어난다 — API 키라면 콘솔에서 월 한도를 걸어 둔다.
 - [ ] (선택) **Sentry**: 프로젝트를 만들고 Vercel 환경변수(Production)에 `SENTRY_DSN`·`NEXT_PUBLIC_SENTRY_DSN`.
       소스맵 업로드까지 하려면 `SENTRY_AUTH_TOKEN`·`SENTRY_ORG`·`SENTRY_PROJECT`. 없으면 꺼진 채로 동작한다.
