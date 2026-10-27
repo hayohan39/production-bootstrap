@@ -430,6 +430,14 @@ describe("previousReview (AI 리뷰 PR 당 1회)", () => {
     expect(previousReview({ ...first, review: null })).toBeNull();
   });
 
+  it("AI 가 건 hard override 도 이어 쓴다", () => {
+    const base = review({ security: 10 });
+    const withOverride = { ...base, risk: { ...base.risk, overrides: [{ level: "CRITICAL", condition: "인가 우회", evidence: "src/x.ts:1" }] } };
+    const first = finalize({ scan: baseScan(), review: withOverride, sha: "aaa" });
+    expect(first.level).toBe("CRITICAL");
+    expect(finalize({ scan: baseScan(), review: previousReview(first), sha: "bbb" }).level).toBe("CRITICAL");
+  });
+
   it("이어 쓴 리뷰는 어느 커밋을 본 것인지 코멘트에 남긴다", () => {
     const a = { ...finalize({ scan: baseScan(), review: review({ security: 10 }), sha: "bbbbbbb1" }), reviewSha: "aaaaaaa1" };
     const checks = applyPolicy(a, { prBody: "", ciOk: true });

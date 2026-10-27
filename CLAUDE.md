@@ -91,7 +91,7 @@ CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)
                  ├ scan     규칙 기반 스캔 → factor 최저치 · hard override
                  ├ review   Claude 리뷰 + Risk factor 점수 (CI 통과 시)
                  └ report   PR 종합 코멘트 · risk:* 라벨 (merge 를 막지 않음)
-                 (AI 리뷰는 PR 당 1회 — `ai-reviewed` 라벨. 이후 push 는 규칙 스캔만 새로 하고 AI 평가를 이어 씀)
+                 (AI 리뷰는 통과할 때까지, 통과 뒤에는 PR 당 1회 — `ai-reviewed` 라벨. 이후 push 는 규칙 스캔만 새로 하고 AI 평가를 이어 씀)
 PR 코멘트 @claude ─► claude-mention.yml  지시대로 수정
 merge ─► deploy.yml  DB 스냅샷 → 마이그레이션 → 스테이징 배포 → 스모크 → promote → 헬스체크 → (실패 시) 자동 롤백
 수동 ─► rollback.yml  직전 성공 배포로 되돌리기

@@ -193,12 +193,16 @@ export function previousReview(assessment) {
   for (const [name, f] of Object.entries(assessment.factors ?? {})) {
     if (f.llm != null) factors[name] = { score: f.llm, evidence: f.evidence, confidence: f.confidence };
   }
+  // AI 가 건 hard override 도 되살린다(빠지면 이어 쓰는 push 마다 등급이 내려간다).
+  const overrides = (assessment.overrides ?? [])
+    .filter((o) => o.source === 'review')
+    .map(({ level, condition, evidence }) => ({ level, condition, evidence }));
   const r = assessment.review;
   return {
     summary: r.summary,
     verdict: r.verdict,
     findings: r.findings,
-    risk: { factors, drivers: r.drivers, mitigations: r.mitigations, unknowns: r.unknowns, affected: r.affected },
+    risk: { factors, overrides, drivers: r.drivers, mitigations: r.mitigations, unknowns: r.unknowns, affected: r.affected },
   };
 }
 
@@ -228,15 +232,19 @@ export async function runReport({ dir, pr, sha, reviewPath, model }) {
 
   // AI 리뷰는 PR 당 1회. 이번에 리뷰하지 않았으면 이유(PR 당 1회·CI 실패·draft)와 상관없이 직전 AI 평가를 이어 쓰고
   // 어느 커밋을 본 것인지 남긴다 — CI 가 한 번 실패한 push 가 AI 평가를 덮어써 잃지 않게.
+  // 라벨은 리뷰가 통과(approve)했을 때만 붙인다 — "수정 필요" 면 지적을 고친 다음 push 에서 다시 리뷰해야 하므로.
   let reviewSha = review ? sha : null;
-  if (review) {
+  const labeled = (prData.labels ?? []).some((l) => l.name === REVIEWED_LABEL);
+  if (review && review.verdict === 'approve') {
     await ensureLabel(REVIEWED_LABEL, 'c5def5', 'AI 리뷰를 마침 (떼고 push 하면 다시 리뷰)');
     await gh(`/repos/${repo()}/issues/${pr}/labels`, { method: 'POST', body: { labels: [REVIEWED_LABEL] } });
+  } else if (review) {
+    if (labeled) await gh(`/repos/${repo()}/issues/${pr}/labels/${REVIEWED_LABEL}`, { method: 'DELETE', allow404: true });
   } else if (prev?.assessment?.review) {
     review = previousReview(prev.assessment);
     model = prev.assessment.model;
     reviewSha = prev.assessment.reviewSha ?? prev.assessment.sha;
-  } else if ((prData.labels ?? []).some((l) => l.name === REVIEWED_LABEL)) {
+  } else if (labeled) {
     // 라벨은 있는데 이어 쓸 AI 평가가 없다(코멘트가 지워졌거나 사람이 붙임) → 떼어서 다음 push 에 다시 리뷰한다.
     await gh(`/repos/${repo()}/issues/${pr}/labels/${REVIEWED_LABEL}`, { method: 'DELETE', allow404: true });
   }
