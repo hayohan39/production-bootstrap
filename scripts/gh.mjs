@@ -133,6 +133,7 @@ try {
     case 'pr-watch': {
       const number = positional[0] ?? currentPr(R);
       const deadline = Date.now() + 30 * 60_000;
+      let checksDoneAt = null;
       for (;;) {
         const { head } = api(`repos/${R}/pulls/${number}`);
         const list = [...checks(R, head.sha), ...statuses(R, head.sha)];
@@ -141,7 +142,19 @@ try {
         // 이 커밋을 평가한 종합 코멘트가 갱신될 때까지 기다린다.
         if (list.length && !pending.length) {
           if (riskSummary(R, number)?.data?.assessment?.sha === head.sha) break;
+          // PR 리뷰는 CI 가 취소되면 돌지 않는다. 체크가 끝난 뒤 15분이 지나도 안 붙으면 실패한 것으로 본다.
+          if (list.some((c) => c.conclusion === 'cancelled')) {
+            console.log('CI 가 취소돼 PR 리뷰는 돌지 않습니다(새 커밋의 CI 가 끝나면 붙습니다).');
+            break;
+          }
+          checksDoneAt ??= Date.now();
+          if (Date.now() - checksDoneAt > 15 * 60_000) {
+            console.log('체크가 끝난 지 15분이 지나도 PR 리뷰 코멘트가 없습니다 — Actions → PR review 실행을 확인하세요.');
+            break;
+          }
           pending.push('PR 리뷰');
+        } else {
+          checksDoneAt = null;
         }
         if (Date.now() > deadline) {
           console.log('30분이 지나 기다리기를 멈춥니다.');

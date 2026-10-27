@@ -391,6 +391,13 @@ describe("applyPolicy", () => {
     expect(checks.reasons[0]).toContain("롤백 계획");
   });
 
+  it("빠진 확인 사항 수를 코멘트 둘째 줄에 보여 준다", () => {
+    const a = assessment("HIGH");
+    const checks = applyPolicy(a, { prBody: body(), ciOk: true });
+    const line = renderSummary({ assessment: a, checks, ci: { test: "success", ok: true } }).split("\n")[2];
+    expect(line).toContain("merge 전 확인 **1개 빠짐 ⚠️**");
+  });
+
   it("CI 실패면 확인 사항으로 남긴다", () => {
     expect(applyPolicy(assessment("LOW"), { prBody: "", ciOk: false }).state).toBe("failure");
   });
@@ -423,6 +430,7 @@ describe("renderSummary", () => {
     expect(lines[0]).toBe("<!-- pr-summary -->");
     expect(lines[1]).toContain(`Risk ${a.total}/100`);
     expect(lines[2]).toContain("이전 커밋 30");
+    expect(lines[2]).toContain("merge 전 확인 **모두 채움 ✅**");
     expect(decodeData(text).assessment.total).toBe(a.total);
   });
 });
