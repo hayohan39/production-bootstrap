@@ -12,9 +12,11 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 // 앱·DB·빌드에 영향이 없는 파일. 세 템플릿(mobile·production·project)이 같은 규칙을 쓴다.
-//   - src/·assets/ 안의 .md 는 번들에 들어갈 수 있어 문서로 보지 않는다.
-//   - .github/review/·.github/risk/ 의 .md 는 리뷰 기준(프롬프트·rubric)이라 파이프라인에 영향이 있다.
-const DOCS = [/^docs\//, /\.md$/, /^LICENSE(\.|$)/];
+// 문서로 보는 곳만 나열한다: docs/, 루트의 .md, .claude/ 의 .md(세션 지침), .github/ 바로 아래의 .md(PR 템플릿),
+// 어디에 있든 README.md, LICENSE. 그 밖의 .md(content/·public/ 처럼 앱이 읽을 수 있는 것)는 코드로 본다.
+//   - src/·assets/ 안은 README 라도 번들에 들어갈 수 있어 문서로 보지 않는다.
+//   - .github/review/·.github/risk/ 는 리뷰 기준(프롬프트·rubric)이라 파이프라인에 영향이 있다.
+const DOCS = [/^docs\//, /^[^/]+\.md$/, /^\.claude\/.*\.md$/, /^\.github\/[^/]+\.md$/, /(^|\/)README\.md$/i, /^LICENSE(\.|$)/];
 const NEVER_DOCS = [/^src\//, /^assets\//, /^\.github\/(review|risk)\//];
 
 export const isDocs = (file) => DOCS.some((re) => re.test(file)) && !NEVER_DOCS.some((re) => re.test(file));

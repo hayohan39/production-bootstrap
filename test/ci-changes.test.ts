@@ -27,6 +27,12 @@ describe("ci-changes", () => {
     expect(isDocs(".github/pull_request_template.md")).toBe(true);
   });
 
+  it("문서 자리가 아닌 .md(앱이 읽을 수 있는 콘텐츠)는 문서로 보지 않는다", () => {
+    expect(isDocs("content/terms.md")).toBe(false);
+    expect(isDocs("public/notice.md")).toBe(false);
+    expect(isDocs(".claude/skills/project-status/SKILL.md")).toBe(true);
+  });
+
   it("src/·assets/ 안의 .md 는 번들에 들어갈 수 있어 문서로 보지 않는다", () => {
     expect(isDocs("src/content/notes.md")).toBe(false);
     expect(isDocs("assets/credits.md")).toBe(false);
