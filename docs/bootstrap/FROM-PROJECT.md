@@ -61,7 +61,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 **그대로 복사** (프로젝트에 같은 이름이 없다)
 
 - `.github/workflows/pr-review.yml`, `risk-gate.yml`, `rollback.yml`
-- `.github/risk/`(rubric·config·review-prompt·review-schema)
+- `.github/risk/`(rubric·config·review-prompt·review-schema), `.github/dependabot.yml`
 - `scripts/risk/`, `scripts/release.mjs`, `scripts/smoke.mjs`
 - `src/lib/env.ts`, `src/lib/log.ts`, `src/lib/sentry.ts`, `src/instrumentation.ts`, `src/instrumentation-client.ts`,
   `src/sentry.server.config.ts`, `src/sentry.edge.config.ts`, `src/app/global-error.tsx`
