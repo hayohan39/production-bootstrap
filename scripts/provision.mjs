@@ -162,13 +162,20 @@ const LABELS = [
   ['risk:critical', '6e0b0b', 'Risk Score CRITICAL'],
   ['no-autofix', 'bfdadc', 'CI 실패 시 Claude auto-fix 끄기'],
 ];
-// 파이프라인이 쓰지 않는 라벨: GitHub 기본 라벨, Dependabot 이 만든 것, 예전 파이프라인의 것(merge 게이트·CI 품질 리뷰).
+// 파이프라인이 쓰지 않는 라벨: GitHub 기본 라벨(이슈·PR 에 쓰이면 남김), Dependabot 이 만든 것, 예전 파이프라인의 것(merge 게이트·CI 품질 리뷰).
 // ai-reviewed 는 PR 리뷰가 필요할 때 만든다.
-const UNUSED_LABELS = [
+const DEFAULT_LABELS = [
   'bug', 'documentation', 'duplicate', 'enhancement', 'good first issue', 'help wanted', 'invalid', 'question',
-  'wontfix', 'accessibility', 'dependencies', 'javascript', 'github_actions',
-  'risk-accepted', 'no-refine', 'quality-reviewed',
+  'wontfix', 'accessibility',
 ];
+const OBSOLETE_LABELS = [
+  'dependencies', 'javascript', 'github_actions', 'risk-accepted', 'no-refine', 'quality-reviewed',
+];
+
+function labelInUse(repo, name) {
+  const url = `repos/${repo}/issues?labels=${encodeURIComponent(name)}&state=all&per_page=1`;
+  return JSON.parse(execFileSync('gh', ['api', url], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })).length > 0;
+}
 
 function ensureLabels(repo) {
   for (const [name, color, description] of LABELS) {
@@ -178,8 +185,13 @@ function ensureLabels(repo) {
       console.log(`  ::warning::라벨 ${name} 생성 실패`);
     }
   }
-  for (const name of UNUSED_LABELS) {
+  for (const name of [...DEFAULT_LABELS, ...OBSOLETE_LABELS]) {
     try {
+      // 기본 라벨은 이미 이슈·PR 에 붙여 쓰고 있으면 사용자의 것이라 남긴다.
+      if (DEFAULT_LABELS.includes(name) && labelInUse(repo, name)) {
+        console.log(`  라벨 ${name} 은 이슈·PR 에 쓰이고 있어 남김`);
+        continue;
+      }
       execFileSync('gh', ['label', 'delete', name, '-R', repo, '--yes'], { stdio: 'ignore' });
       console.log(`  라벨 ${name} 삭제`);
     } catch {
