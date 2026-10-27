@@ -47,7 +47,6 @@ jobs:
       review: ${{ steps.decide.outputs.review }}
       model: ${{ steps.decide.outputs.model }}
       max_turns: ${{ steps.decide.outputs.max_turns }}
-      reuse: ${{ steps.decide.outputs.reuse }}
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
@@ -149,11 +148,10 @@ jobs:
           [ "$ACTOR" != "dependabot[bot]" ] || { review=false; why="Dependabot 이 시작한 실행 (시크릿 없음)"; }
           # PR 당 1회: 이미 리뷰한 PR(ai-reviewed 라벨)은 직전 AI 평가를 이어 쓰고 규칙 스캔만 새로 한다.
           # 다시 보려면 라벨을 떼고 push. 매 push 리뷰는 변수 CLAUDE_REVIEW_EVERY_PUSH=true.
-          reuse=false
+          # (리뷰하지 않은 push 는 이유와 상관없이 report 가 직전 AI 평가를 이어 쓴다.)
           if [ "$review" = "true" ] && [ "$REVIEWED" = "true" ] && [ "$EVERY_PUSH" != "true" ]; then
-            review=false; reuse=true; why="PR 당 1회 — 이미 리뷰함, 직전 평가를 이어 씀"
+            review=false; why="PR 당 1회 — 이미 리뷰함, 직전 평가를 이어 씀"
           fi
-          echo "reuse=$reuse" >> "$GITHUB_OUTPUT"
           # 규칙 스캔이 HIGH 이상이면 더 강한 모델로, 더 오래 본다.
           if [ "$HIGH_RISK" = "true" ]; then model="$MODEL_HIGH"; turns=60; else model="$MODEL"; turns=30; fi
           echo "review=$review" >> "$GITHUB_OUTPUT"
@@ -266,11 +264,9 @@ jobs:
           PR: ${{ needs.scan.outputs.pr }}
           SHA: ${{ needs.scan.outputs.sha }}
           MODEL: ${{ needs.scan.outputs.model }}
-          REUSE: ${{ needs.scan.outputs.reuse == 'true' && '1' || '' }}
         run: |
           printf '%s' "$RESULT" > .review/review.json
           if [ "$REVIEW_STATUS" = "success" ] && [ ! -s .review/review.json ]; then
             echo "::warning::Claude 리뷰가 결과를 내지 못했습니다. 규칙 기반 점수만 씁니다."
           fi
-          node scripts/risk/cli.mjs report --dir .review --pr "$PR" --sha "$SHA" --review .review/review.json --model "$MODEL" \
-            ${REUSE:+--reuse-review}
+          node scripts/risk/cli.mjs report --dir .review --pr "$PR" --sha "$SHA" --review .review/review.json --model "$MODEL"

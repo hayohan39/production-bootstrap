@@ -56,7 +56,9 @@ function reusedNote(assessment) {
 
 function verdictText(assessment) {
   if (!assessment.review) return '🤖 AI 리뷰 없음';
-  return assessment.review.verdict === 'approve' ? '✅ 리뷰 통과' : '✋ 리뷰: 수정 필요';
+  // 이전 커밋의 리뷰를 이어 쓰면 첫 줄에서도 알 수 있게(그 뒤 커밋은 AI 가 보지 않았다).
+  const old = assessment.reviewSha && assessment.reviewSha !== assessment.sha ? '(이전 커밋)' : '';
+  return assessment.review.verdict === 'approve' ? `✅ 리뷰 통과${old}` : `✋ 리뷰: 수정 필요${old}`;
 }
 
 function recommendation(level, checks) {
@@ -90,7 +92,8 @@ export function renderSummary({ assessment, checks, ci, previous = null, repoUrl
   L.push(`## ${LEVEL_LABELS[checks.level]} · Risk ${a.total}/100 · ${verdictText(a)} · CI ${ciIcon(ci.test)}`);
   const delta = previous && previous.sha !== a.sha ? ` (이전 커밋 ${previous.total} → ${a.total})` : '';
   const unmet = checks.requirements.filter((r) => !r.met).length;
-  L.push(`\`${a.sha.slice(0, 7)}\` 기준${delta} · merge 전 확인 **${unmet ? `${unmet}개 빠짐 ⚠️` : '모두 채움 ✅'}**`);
+  // PR 본문은 이 평가를 낸 시점 기준이다(본문을 고친 뒤에는 다음 push 때 다시 본다).
+  L.push(`\`${a.sha.slice(0, 7)}\` 기준${delta} · merge 전 확인 **${unmet ? `${unmet}개 빠짐 ⚠️` : '모두 채움 ✅'}**${unmet ? ' (PR 본문을 고쳤으면 다음 push 때 다시 봄)' : ''}`);
   L.push('');
   L.push(recommendation(checks.level, checks));
   if (a.review?.summary) {

@@ -435,6 +435,7 @@ describe("previousReview (AI 리뷰 PR 당 1회)", () => {
     const checks = applyPolicy(a, { prBody: "", ciOk: true });
     const text = renderSummary({ assessment: a, checks, ci: { test: "success", ok: true } });
     expect(text).toContain("`aaaaaaa` 기준(PR 당 1회)");
+    expect(text.split("\n")[1]).toContain("(이전 커밋)");
   });
 });
 
