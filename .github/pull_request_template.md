@@ -5,6 +5,7 @@
 ## 어떻게 확인했나
 
 - [ ] `npm run check` (lint · typecheck · test · build) 통과
+- [ ] 품질 점검(`.github/review/quality.md`): <!-- 고친 것 / 남긴 것 한 줄 -->
 - [ ] 바뀐 동작을 검증하는 테스트: <!-- 파일과 케이스 -->
 - [ ] (DB 변경 시) 로컬 Postgres 에 `npm run migrate` 적용 확인
 - [ ] (UI 변경 시) 프리뷰에서 확인할 곳:
@@ -13,6 +14,12 @@
 
 <!-- 마이그레이션(잠금·데이터 변경·삭제), 새 환경변수(이름·용도·발급처 — merge 전에 Vercel 에 설정 필요),
      외부 서비스, 배포 순서 제약. 없으면 "없음". -->
+
+## 예상 Risk
+
+<!-- 작성자의 자기 평가(.github/risk/rubric.md). 등급 · 규칙 스캔 최저치 · 가장 큰 factor 두세 개와 이유.
+     예: "MEDIUM (스캔 최저 30) — Compatibility: nullable 컬럼 추가만, 이전 코드는 무시 / Testing: 새 API 테스트 추가"
+     최종 점수는 CI 뒤 AI 리뷰가 낸다. -->
 
 ## 롤백 계획
 

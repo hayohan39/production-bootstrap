@@ -44,7 +44,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 - [ ] **Vercel 배포 보호 우회 키**: Vercel 프로젝트 → Settings → Deployment Protection →
       **Protection Bypass for Automation** → 생성. 값을 GitHub 리포지토리 시크릿 `VERCEL_AUTOMATION_BYPASS_SECRET` 으로 넣는다.
       (deploy.yml 의 스모크 테스트가 도메인 연결 전 배포를 이 값으로 연다. 새 프로젝트는 provision 이 자동으로 만든다.)
-- [ ] **Claude 시크릿 확인**: `ANTHROPIC_API_KEY` 또는 `CLAUDE_CODE_OAUTH_TOKEN` 이 이미 있다. AI 리뷰(PR 당 1회)·품질 리뷰가 늘어
+- [ ] **Claude 시크릿 확인**: `ANTHROPIC_API_KEY` 또는 `CLAUDE_CODE_OAUTH_TOKEN` 이 이미 있다. AI 리뷰(PR 당 1회)가 늘어
       사용량이 늘어난다 — API 키라면 콘솔에서 월 한도를 걸어 둔다.
 - [ ] (선택) **Sentry**: 프로젝트를 만들고 Vercel 환경변수(Production)에 `SENTRY_DSN`·`NEXT_PUBLIC_SENTRY_DSN`.
       소스맵 업로드까지 하려면 `SENTRY_AUTH_TOKEN`·`SENTRY_ORG`·`SENTRY_PROJECT`. 없으면 꺼진 채로 동작한다.
@@ -93,7 +93,7 @@ Vercel Hobby + Neon Free 에서 이 흐름을 그대로 돌리고 있다.
 **가져오지 않는다**(템플릿 전용): `new-project.yml`, `scripts/provision.mjs`, `scripts/init-project.mjs`, `test/template/`,
 `docs/bootstrap/`, `.claude/skills/new-project/`.
 
-**라벨**: `risk:low`·`risk:medium`·`risk:high`·`risk:very-high`·`risk:critical`·`no-autofix`·`no-refine`
+**라벨**: `risk:low`·`risk:medium`·`risk:high`·`risk:very-high`·`risk:critical`·`no-autofix`
 을 만든다(`gh api repos/{owner}/{repo}/labels` — 이름·색은 `scripts/provision.mjs` 의 `LABELS`). 라벨 정의를 만드는 것이고
 PR 에 붙이거나 떼는 것이 아니다.
 
@@ -106,7 +106,6 @@ PR 본문의 "배포 영향" 에 3번 체크리스트(사용자가 넣어야 할
 
 - **Risk Score 가 붙지 않는다.** `pr-review.yml` 은 main 에 있는 버전만 실행되는데, main 에는 아직 없다.
   이 PR 은 기존 `claude-review.yml` 이 리뷰한다. Risk 는 전환 뒤 다음 PR 부터.
-- **품질 리뷰(refine)가 건너뛴다.** `ci.yml` 을 바꾸는 PR 이라 정상이다.
 - 그래서 이 PR 은 diff 를 사람이 한 번 훑고 merge 한다. 앱 코드 변경은 위 "손으로 합친다" 뿐이다.
 
 ## 5. merge 뒤 확인
@@ -115,8 +114,8 @@ PR 본문의 "배포 영향" 에 3번 체크리스트(사용자가 넣어야 할
       스모크가 401/403 이면 `VERCEL_AUTOMATION_BYPASS_SECRET` 이 없거나 틀렸다.
 - [ ] `https://<도메인>/api/health` 의 `commit` 이 merge 커밋 7자리.
 - [ ] 아무 작은 PR 을 올려 **PR 종합 코멘트**(CI · 리뷰 · Risk), `risk:*` 라벨이 붙는지 본다.
-- [ ] 그 PR 에서 `@claude` 로 작은 수정을 시켜, Claude 커밋에도 품질 리뷰와 AI 리뷰가 붙는지 본다
-      ("결과를 남기지 못했습니다"·"AI 리뷰 없음" 이면 [DESIGN.md](DESIGN.md) 4번의 `allowed_bots`).
+- [ ] 그 PR 에서 `@claude` 로 작은 수정을 시켜, Claude 커밋에도 AI 리뷰가 붙는지 본다
+      ("AI 리뷰 없음" 이면 [DESIGN.md](DESIGN.md) 4번의 `allowed_bots`).
 - [ ] (선택) Rollback 워크플로를 한 번 돌려 직전 배포로 돌아가는지 보고, 다시 최신으로 배포한다.
 
 ## 6. 마지막으로 브랜치 규칙

@@ -30,14 +30,16 @@ GitHub 에서 PR 종합 코멘트(CI · 코드 리뷰 · Risk Score)를 보고 m
    묻는다(아래 "인프라 결정"). 그 외에는 합리적으로 판단해 진행하고 PR 에 적는다.
 3. 구현한다. **한 PR 에 한 목적.** 무관한 리팩터링은 하지 않는다. 위험한 변경(스키마 삭제·이름 변경,
    인증, 공통 모듈)은 작게 나눈다 — Risk 등급이 낮은 PR 여러 개가 CRITICAL 하나보다 낫다.
-4. **push 전에 diff 를 스스로 다듬는다**: `.github/review/quality.md` 기준(덧붙임·재사용·단순화·일관성·빈틈)으로
-   `git diff origin/main...HEAD` 를 한 번 훑는다. 세션에 `/simplify` 스킬이 있으면 그걸 써도 된다.
-   CI 뒤의 품질 리뷰는 안전망이다 — 거기서 지적이 적을수록 좋다.
+4. **push 전에 diff 를 스스로 다듬는다** — CI 에는 품질 리뷰가 없어서 이 단계가 유일한 품질 점검이다.
+   `.github/review/quality.md` 를 읽고 그 기준(덧붙임·재사용·단순화·일관성·빈틈)으로 `git diff origin/main...HEAD` 를 훑어
+   바로 고칠 것은 고치고, 남길 것은 PR 본문에 적는다. 세션에 `/simplify` 스킬이 있으면 먼저 돌리고 표로 한 번 더 본다.
    그리고 **반드시** `npm run check` (lint → typecheck → test → build) 를 통과시킨다.
    DB 를 건드렸으면 로컬 Postgres 에 `npm run migrate` 도 돌려 본다(아래 참고).
-5. **예상 Risk 를 먼저 본다**: `node scripts/risk/cli.mjs scan --base origin/main --head HEAD`
-   (규칙 기반 최저치만 나온다. 최종 점수는 CI 뒤 AI 리뷰가 더한다.) HIGH 이상이 나올 변경이면
-   PR 본문의 **롤백 계획**, VERY HIGH 이상이면 **배포 후 확인**까지 구체적으로 쓴다.
+5. **예상 Risk 를 스스로 매긴다**: `node scripts/risk/cli.mjs scan --base origin/main --head HEAD`(규칙 기반 최저치)를 돌리고,
+   `.github/risk/rubric.md` 의 factor 로 직접 평가해 PR 본문 **예상 Risk** 에 등급과 가장 큰 factor 두세 개를 쓴다.
+   HIGH 이상이면 **롤백 계획**, VERY HIGH 이상이면 **배포 후 확인**까지 구체적으로 쓴다.
+   최종 점수는 CI 뒤 독립 AI 리뷰(PR 당 1회)가 낸다 — 작성자의 자기 평가는 맹점을 공유하므로 대신하지 못한다.
+   AI 리뷰가 더 높게 매기면 그 근거를 보고 롤백 계획·테스트를 보강한다.
 6. 커밋 메시지는 Conventional Commits, 제목은 한국어 가능: `feat: 할 일 목록 추가`.
 7. push 후 **PR 을 만든다**. 본문은 `.github/pull_request_template.md` 형식으로 파일에 쓰고:
    `node scripts/gh.mjs pr-create --title "feat: ..." --body-file /tmp/pr.md`
@@ -50,8 +52,7 @@ GitHub 에서 PR 종합 코멘트(CI · 코드 리뷰 · Risk Score)를 보고 m
 9. **merge 하지 않는다.** 사용자가 요청해도 "PR 에서 merge 버튼을 눌러 주세요" 라고 안내한다.
 
 PR 이 이미 열려 있는 브랜치에서 추가 요청을 받으면 같은 브랜치에 커밋을 더한다.
-그 전에 `git pull origin <브랜치>` — CI 가 `[claude-refine]`·`[claude-autofix]` 커밋을 더했을 수 있다.
-품질 리뷰 코멘트(🧹)의 **제안**을 사용자가 반영해 달라고 하면 같은 브랜치에서 고친다.
+그 전에 `git pull origin <브랜치>` — CI 가 `[claude-autofix]` 커밋을 더했을 수 있다.
 
 ### Risk Score 를 대하는 태도
 
@@ -59,7 +60,7 @@ PR 이 이미 열려 있는 브랜치에서 추가 요청을 받으면 같은 �
 - **점수를 낮추려고 위험을 숨기지 않는다.** SQL 을 쪼개 스캐너를 피하거나, 테스트를 형식적으로 추가하거나,
   PR 본문에 확인하지 않은 주장을 쓰지 않는다. 진짜로 위험을 줄이는 방법(작게 나누기, expand/contract,
   테스트, 기능 플래그)만 쓴다.
-- `risk:*`·`ai-reviewed`·`quality-reviewed` 라벨, PR 리뷰 상태는 **절대 건드리지 않는다**(리뷰를 건너뛰게 만드는 라벨이다). 위험을 받아들이고 merge 하는 것은 사람의 몫이다.
+- `risk:*`·`ai-reviewed` 라벨, PR 리뷰 상태는 **절대 건드리지 않는다**(리뷰를 건너뛰게 만드는 라벨이다). 위험을 받아들이고 merge 하는 것은 사람의 몫이다.
 - `.github/risk/*`, `scripts/risk/*`, `.github/workflows/pr-review.yml` 을 바꾸는 것은
   평가 기준 자체를 바꾸는 일이다. 사용자가 명시적으로 요청했을 때만 하고, 별도 PR 로 한다.
 
@@ -85,7 +86,6 @@ DB 복구(스냅샷/PITR)는 데이터에 영향이 크므로 절차를 설명�
 PR 생성/push ─► ci.yml
                  ├ test     마이그레이션 append-only 확인 · lint · typecheck · test · 빈 Postgres 마이그레이션 · build
                  ├ preview  Neon 브랜치(프로덕션 복제)에 마이그레이션 → Vercel 프리뷰 → 스모크 테스트
-                 ├ refine   위가 통과하면 Claude 품질 리뷰 → 작은 정리는 [claude-refine] 커밋, 큰 것은 제안 (PR 당 1회 — `quality-reviewed` 라벨)
                  └ autofix  위가 실패하면 Claude 가 고쳐서 [claude-autofix] 커밋 (PR 당 최대 3회)
 CI 완료 ─► pr-review.yml (workflow_run, main 의 코드로 실행)
                  ├ scan     규칙 기반 스캔 → factor 최저치 · hard override

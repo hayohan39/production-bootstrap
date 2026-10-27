@@ -8,12 +8,11 @@
 나 ── Claude 세션(웹/모바일) ── "이거 만들어줘" / "지금 상황 어때?" / "장애 났어"
           │
           ▼
-   Claude: 브랜치 → 구현 → npm run check → 예상 Risk 확인 → 커밋 → PR
+   Claude: 브랜치 → 구현 → 품질 점검(quality.md) → npm run check → 예상 Risk 자기 평가 → 커밋 → PR
           │
           ▼
    CI ─ test (append-only 마이그레이션 · lint · typecheck · test · 빈 DB 마이그레이션 · build)
       ─ preview (프로덕션 복제 DB 에 마이그레이션 → Vercel 프리뷰 → 스모크)
-      ├ 통과 → Claude 품질 리뷰: 작은 정리는 직접 커밋, 큰 리팩터링은 제안 (PR 당 1회)
       └ 실패 → Claude auto-fix (PR 당 최대 3회)
           │
           ▼
@@ -72,7 +71,7 @@ PR 이 "좋은 코드인가" 가 아니라 **"프로덕션에서 잘못되면 �
 ```
 .github/
   workflows/
-    ci.yml               test → preview(스모크) → refine(품질 리뷰·정리) / autofix(실패 시)
+    ci.yml               test → preview(스모크) → autofix(실패 시)
     pr-review.yml        CI 완료 → 규칙 스캔 + Claude 리뷰 → Risk Score → 종합 코멘트·라벨
     deploy.yml           main → 스냅샷 → 마이그레이션 → 스테이징 → 승격 → 헬스체크 → 자동 롤백
     rollback.yml         수동 롤백 (직전 성공 배포)
