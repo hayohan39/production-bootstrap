@@ -41,39 +41,22 @@ Claude 클라우드 세션(웹·모바일)의 GitHub 접근은 전용 프록시�
 
 - `GITHUB_TOKEN` 으로 push 한 커밋은 워크플로를 트리거하지 않는다. Claude GitHub App 토큰 또는 `BOT_PAT` 이 필요하다.
 - 그래서 App 토큰으로 push 한 커밋의 CI·PR 리뷰는 `claude[bot]` 이 시작한 실행이 된다. claude-code-action 은 bot 이 시작한 실행을
-  기본으로 거부하므로(`Workflow initiated by non-human actor`) refine·auto-fix(`ci.yml`)와 PR 리뷰(`pr-review.yml`)에
-  `allowed_bots: claude` 를 둔다. 빠지면 Claude 커밋 뒤 품질 리뷰가 "결과를 남기지 못했습니다", PR 리뷰가 "AI 리뷰 없음" 이 된다.
+  기본으로 거부하므로(`Workflow initiated by non-human actor`) auto-fix(`ci.yml`)와 PR 리뷰(`pr-review.yml`)에
+  `allowed_bots: claude` 를 둔다. 빠지면 Claude 커밋 뒤 PR 리뷰가 "AI 리뷰 없음" 이 된다.
   `@claude`(`claude-mention.yml`)는 사람의 코멘트로만 시작하므로 두지 않는다.
 - 무한 루프 방지: PR 브랜치의 `[claude-autofix]` 커밋 수(기본 3).
 - **운영용 추가 제한**: 도구를 허용 목록으로 좁혔다(`npm`·`node`·`git`·`gh pr comment`, 파일 편집).
   `.github/` 와 `scripts/risk/` 는 편집 금지, 라벨·PR 상태를 바꾸는 명령은 쓸 수 없다.
 
-## 4-1. 품질 리뷰 (refine)
+## 4-1. 품질 점검은 push 전 세션에서
 
-CI 가 통과하면 Claude 가 `.github/review/quality.md` 기준(덧붙임·재사용·단순화·일관성·빈틈)으로 PR 을 한 번 더 본다.
-PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드를 얼마나 깔끔하게 짰나".
+CI 에는 품질 리뷰가 없다(2026-10 에 `refine` job 을 없앴다). 리뷰 job(3~5분)에 더해 정리 커밋이 CI 를 한 번 더 돌려
+PR 마다 Actions 시간이 거의 두 배가 됐고, 같은 기준(`.github/review/quality.md`)을 작성자 세션이 push 전에 이미 쓰고 있었다.
+그래서 CLAUDE.md 4단계에서 세션이 이 기준으로 diff 를 다듬고 결과를 PR 본문 "어떻게 확인했나" 에 한 줄로 남긴다.
 
-- **동작이 바뀌지 않는 국소적 정리만** 자동 반영한다(`npm run check` 통과 필수, 실패하면 되돌리고 제안으로).
-  여러 파일·공개 인터페이스·테스트 추가는 제안 코멘트로만 남기고 사람이 `@claude` 로 지시한다.
-- PR 당 한 번: 시작할 때 PR 에 `quality-reviewed` 라벨을 붙이고, 라벨이 있으면 job 자체가 건너뛴다(러너도 뜨지 않아 0분).
-  리뷰가 결과를 남기지 못하면 라벨을 떼어 다음 push 에 다시 돈다. 품질 리뷰는 push 마다 CI 를 한 번 더 돌게 하므로
-  (정리 커밋 → CI 재실행) Actions 사용 시간이 두 배가 된다. 작성자 push 마다 돌리려면 `REFINE_EVERY_PUSH=true`,
-  한 PR 만 다시 돌리려면 라벨을 떼고 push 한다.
-- 반복 방지: HEAD 가 이미 `[claude-refine]` 커밋이면 건너뛴다(`REFINE_MAX_ROUNDS`, 기본 1).
-- `migrations/`, `.github/`, `scripts/risk/` 는 네 겹으로 막는다: 프롬프트, 편집 도구(Edit·Write) 차단, pre-push 훅,
-  사후 검사(`[claude-refine]` 커밋이 건드렸으면 🧹 코멘트에 경고. 그 push 가 실행을 취소하므로
-  job 은 '실패' 가 아니라 '취소됨' 으로 보일 수 있다 — 신호는 코멘트 경고다).
-  pre-push 훅은 커밋 제목의 `[claude-refine]` 도 강제한다(빠지면 반복 방지가 안 된다).
-  완전한 차단은 아니다: `npm run check` 가 PR 코드를 실행하는 이상 의도적 우회는 가능하다.
-  마지막 방어선은 그 커밋도 다시 거치는 CI · 리뷰와 사람의 merge 다.
-- push 는 마지막에 한 번. `ci.yml` 의 concurrency 가 push 직후 이 실행을 취소하므로 리포트를 먼저 쓰고,
-  리포트 게시는 `always()` 라 취소돼도 올라간다.
-- `ci.yml` 을 바꾸는 PR 에서는 건너뛴다 — claude-code-action 은 App 토큰을 받을 때 실행 중인 워크플로가
-  기본 브랜치와 같은지 검사한다(`BOT_PAT` 을 쓰면 검사가 없어 그대로 돈다).
-- refine 은 `ci.yml` 안에 있어 PR 의 버전으로 돈다. 코드를 고치는 도우미일 뿐 게이트가 아니므로 괜찮다 —
-  정리된 커밋도 다시 CI 를 거치고, Risk 평가는 여전히 main 의 규칙(`pr-review.yml`)으로 한다.
-  refine 이 push 하면 이전 커밋의 PR review 는 "head 가 바뀜" 으로 건너뛰고 새 커밋이 평가된다.
-- 세션에서 PR 을 올리기 전 같은 기준으로 스스로 다듬게 한다(CLAUDE.md). CI 쪽은 안전망.
+Risk 평가는 옮기지 않았다. 작성자 세션이 PR 본문 "예상 Risk" 에 자기 평가를 쓰지만(5단계), 최종 점수는
+main 의 코드로 도는 독립 AI 리뷰(`pr-review.yml`, PR 당 1회)가 낸다 — 작성자는 자기 코드의 맹점을 공유하고,
+PR 이 자기 평가 방식을 바꿀 수 없어야 하기 때문이다.
 
 ## 5. CI 는 ubuntu 만
 
@@ -86,11 +69,11 @@ PR 리뷰(버그·보안·Risk)와 목적이 다르다 — "동작하는 코드�
 - **모든 job 에 `timeout-minutes`.** 기본값 360분이면 멈춘 job 하나가 한도를 크게 깎는다. Claude 단계는 step 에도
   더 짧은 상한을 둬서, 멈춰도 뒤의 리포트·검사 step 은 돈다.
 - **문서만 바뀐 PR·merge**(`scripts/ci-changes.mjs` — 세 템플릿 공통): `test` job 은 돌되 설치·빌드·테스트를 건너뛰고,
-  preview·refine 도 건너뛴다. deploy 는 **마지막 성공 배포** 이후가 문서뿐일 때 배포하지 않는다(앞선 배포가 실패했으면 그 코드까지 배포).
+  preview 도 건너뛴다. deploy 는 **마지막 성공 배포** 이후가 문서뿐일 때 배포하지 않는다(앞선 배포가 실패했으면 그 코드까지 배포).
   `paths-ignore` 를 쓰지 않는 이유: 필수 체크(`test`)가 아예 안 생겨 merge 가 막힌다. 판정이 불확실하면 전체를 돈다.
   템플릿 리포지토리는 템플릿 테스트가 문서도 보므로 항상 전체를 돈다. PR 리뷰(Risk)는 문서 PR 에도 돈다.
 - draft PR 도 프리뷰를 돈다(Ready for review 때 CI 와 PR 리뷰가 다시 돈다).
-- **품질 리뷰는 PR 당 한 번**(4-1). auto-fix 는 PR 당 3회(`AUTOFIX_MAX_ATTEMPTS`).
+- **품질 리뷰는 CI 에서 하지 않는다**(4-1). AI 리뷰는 PR 당 한 번, auto-fix 는 PR 당 3회(`AUTOFIX_MAX_ATTEMPTS`).
 - Next.js 빌드 캐시(`.next/cache`)를 `actions/cache` 로 남긴다. main push 의 CI 가 PR 들의 출발점 캐시를 만든다.
 - **main push 의 test 는 일부러 쓰는 시간이다.** 브랜치 보호가 "최신 main 포함"(strict)을 요구하지 않아 merge 결과물은
   PR 에서 검사되지 않았다. 앞선 merge 의 CI 가 취소됐을 수 있어 문서만 바뀐 merge 도 전체를 돈다. deploy.yml 은 그 test 가 통과한 뒤 `workflow_run` 으로 시작한다(strict 를 켜면 PR 마다 "Update branch"

@@ -42,23 +42,12 @@ Claude 시크릿 없음, Dependabot PR, Claude 실행 실패(로그 확인). AI 
 
 ## CI / 프리뷰
 
-**품질 리뷰(🧹)가 안 붙음** — CI 가 실패했거나(그땐 auto-fix 가 돈다), draft, Dependabot, `no-refine` 라벨,
-`CLAUDE_REFINE=false`, 문서만 바뀐 PR, 이 PR 에서 이미 한 번 돌았거나(PR 당 1회 — 다시 돌리려면 🧹 코멘트를 지우고 push),
-HEAD 가 이미 `[claude-refine]` 커밋이다.
-
 **프리뷰가 안 뜸** — 문서만 바뀐 PR 이다(설계상 건너뜀 — 마이그레이션이 없어 복제 DB 검증이 필요 없다).
-🧹 코멘트에 "`ci.yml` 을 바꿔서 건너뜁니다" 가 있으면 그 PR 이 `ci.yml` 을 고쳤다 — merge 후 다음 PR 부터 돈다.
-
-**`[claude-refine]` 커밋 뒤 세션에서 push 가 거절됨** — CI 가 브랜치에 커밋을 더했다. `git pull origin <브랜치>` 후 다시 push.
-
-**🧹 코멘트에 "보호된 경로를 바꿨습니다" 경고** — 품질 리뷰 커밋이 막힌 경로를 건드렸다. 그 커밋을 revert.
-
-**품질 리뷰가 원치 않는 정리를 했다** — 그 커밋을 revert 하고 PR 에 `no-refine` 라벨. 기준을 바꾸려면 `.github/review/quality.md`.
 
 **auto-fix 가 push 했는데 CI 가 다시 안 돎** — `GITHUB_TOKEN` push 는 워크플로를 트리거하지 않는다. Claude App 또는 `BOT_PAT`.
 
-**Claude 커밋 뒤 품질 리뷰가 "결과를 남기지 못했습니다" / PR 리뷰가 "AI 리뷰 없음"** — 로그에 `Workflow initiated by non-human actor`.
-`claude[bot]` 이 시작한 실행이다. ci.yml(refine·autofix)·pr-review.yml 의 `allowed_bots: claude` 를 확인한다([DESIGN.md 4번](DESIGN.md#4-auto-fix)).
+**Claude 커밋 뒤 PR 리뷰가 "AI 리뷰 없음"** — 로그에 `Workflow initiated by non-human actor`.
+`claude[bot]` 이 시작한 실행이다. ci.yml(autofix)·pr-review.yml 의 `allowed_bots: claude` 를 확인한다([DESIGN.md 4번](DESIGN.md#4-auto-fix)).
 `BOT_PAT` 을 쓰면 실행 주체가 사람 계정이라 이 증상은 생기지 않는다.
 
 **`Migrations are append-only` 실패** — main 에 있는 `.sql` 을 고쳤다. 되돌리고 새 마이그레이션으로.
