@@ -224,7 +224,7 @@ jobs:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
-          # Claude(auto-fix·refine·@claude)가 push 한 커밋의 CI 는 claude[bot] 이 시작한다. 그 커밋도 AI 리뷰를 받게 허용한다.
+          # Claude(auto-fix·@claude)가 push 한 커밋의 CI 는 claude[bot] 이 시작한다. 그 커밋도 AI 리뷰를 받게 허용한다.
           allowed_bots: claude
           prompt: ${{ steps.prompt.outputs.text }}
           claude_args: |
